@@ -1,4 +1,4 @@
-# Product Requirements Document: Government Contract Opportunity Automation Platform
+# Product Requirements Document: Contract Opportunity Automation Platform
 
 **Document Version:** 1.0  
 **Date:** 2024  
@@ -9,7 +9,7 @@
 
 ## 1. Product Overview
 
-The Government Contract Opportunity Automation Platform is an internal operations system designed to streamline the discovery, qualification, storage, and application process for government, state, municipal, and independent contractor opportunities. The platform automates the end-to-end workflow from opportunity ingestion through submission tracking, while maintaining strict security controls, auditability, and human oversight mechanisms.
+The Contract Opportunity Automation Platform is an internal operations system designed to streamline the discovery, qualification, storage, and application process for government (federal), state, municipal, and independent contractor opportunities. The platform automates the end-to-end workflow from opportunity ingestion through submission tracking, while maintaining strict security controls, auditability, and human oversight mechanisms.
 
 The system integrates multiple data sources (APIs and permitted scraping), employs AI-powered normalization and qualification, maintains a secure contracts vault, and leverages OpenManus for browser-based application automation. The platform supports both semi-autonomous and fully autonomous submission workflows with configurable safety controls.
 

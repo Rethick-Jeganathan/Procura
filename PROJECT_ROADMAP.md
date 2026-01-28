@@ -1,4 +1,4 @@
-# Project Roadmap: Government Contract Opportunity Automation Platform
+# Project Roadmap: Contract Opportunity Automation Platform
 
 **Document Version:** 1.0  
 **Date:** Jan 25, 2026 
