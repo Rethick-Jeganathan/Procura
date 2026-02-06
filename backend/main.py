@@ -6,6 +6,9 @@ from fastapi import FastAPI, Request, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.exceptions import RequestValidationError
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 import structlog
 import uvicorn
 
@@ -16,6 +19,15 @@ from .routers import documents, follow_ups, correspondence
 # from .tasks.celery_app import celery_app  # Uncomment when Celery is configured
 
 logger = structlog.get_logger()
+
+# Rate limiter — Redis-backed in production, in-memory for dev
+_limiter_storage = app_settings.REDIS_URL if app_settings.is_production else "memory://"
+
+limiter = Limiter(
+    key_func=get_remote_address,
+    default_limits=[f"{app_settings.RATE_LIMIT_PER_MINUTE}/minute"],
+    storage_uri=_limiter_storage,
+)
 
 
 @asynccontextmanager
@@ -50,6 +62,10 @@ app = FastAPI(
     redoc_url="/redoc" if app_settings.DEBUG else None,
     lifespan=lifespan
 )
+
+# Wire rate limiter
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # ===========================================
 # MIDDLEWARE
