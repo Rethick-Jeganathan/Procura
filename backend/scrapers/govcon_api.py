@@ -3,7 +3,7 @@ GovCon API Connector
 Fetches federal contract opportunities from GovCon API
 """
 from typing import List, Dict, Optional
-from datetime import datetime, date, timedelta
+from datetime import datetime, date, timedelta, timezone
 import structlog
 import httpx
 
@@ -86,7 +86,7 @@ class GovConAPIConnector(BaseConnector):
         # Required by schema: posted_date and due_date must be non-null.
         # If the source record doesn't include these, fall back to "today"
         # and mark the raw payload so the UI can show "TBD" / "assumed".
-        today_date = datetime.utcnow().date()
+        today_date = datetime.now(timezone.utc).date()
         today = today_date.strftime("%Y-%m-%d")
         if not posted_date:
             posted_date = today

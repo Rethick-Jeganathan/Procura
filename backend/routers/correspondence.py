@@ -2,7 +2,7 @@
 Correspondence Router
 Contract award notifications, emails, and AI-powered follow-up management.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
@@ -181,7 +181,7 @@ async def create_correspondence(
             "body": data.body,
             "source": data.source,
             "sender": data.sender,
-            "received_at": datetime.utcnow().isoformat(),
+            "received_at": datetime.now(timezone.utc).isoformat(),
             "created_by": user["id"],
             "assigned_to": user["id"],
         }
@@ -255,7 +255,7 @@ async def create_correspondence(
 @router.patch("/{correspondence_id}/status")
 async def update_correspondence_status(
     correspondence_id: str,
-    new_status: str,
+    new_status: str = Query(..., min_length=1),
     supabase: Client = Depends(get_request_supabase),
     user: dict = Depends(require_officer)
 ):
@@ -288,7 +288,7 @@ async def respond_to_correspondence(
     try:
         supabase.table("correspondence").update({
             "status": "responded",
-            "responded_at": datetime.utcnow().isoformat(),
+            "responded_at": datetime.now(timezone.utc).isoformat(),
             "responded_by": user["id"],
             "response_notes": data.response_notes,
         }).eq("id", correspondence_id).execute()
@@ -380,7 +380,7 @@ async def mark_notification_read(
     try:
         supabase.table("notifications").update({
             "read": True,
-            "read_at": datetime.utcnow().isoformat(),
+            "read_at": datetime.now(timezone.utc).isoformat(),
         }).eq("id", notification_id).eq("user_id", user["id"]).execute()
 
         return {"success": True}
@@ -399,7 +399,7 @@ async def mark_all_notifications_read(
     try:
         supabase.table("notifications").update({
             "read": True,
-            "read_at": datetime.utcnow().isoformat(),
+            "read_at": datetime.now(timezone.utc).isoformat(),
         }).eq("user_id", user["id"]).eq("read", False).execute()
 
         return {"success": True, "message": "All notifications marked as read"}

@@ -3,7 +3,7 @@ Settings Router
 API key management and system configuration
 """
 from typing import Optional, Dict, Any
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 import structlog
@@ -292,7 +292,7 @@ async def update_general_settings(
                 client.table("system_settings").upsert({
                     "key": key,
                     "value": value,
-                    "updated_at": datetime.utcnow().isoformat(),
+                    "updated_at": datetime.now(timezone.utc).isoformat(),
                     "updated_by": user.get("id"),
                 }).execute()
                 updated[key] = value

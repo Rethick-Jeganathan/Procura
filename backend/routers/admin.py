@@ -2,7 +2,7 @@
 Admin Dashboard API Router (Extended)
 Comprehensive admin endpoints for full platform management
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional, Dict, Any, List
 from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
@@ -131,7 +131,7 @@ async def get_dashboard_metrics(
                 "cache_enabled": True,
                 "redis_connected": True  # Would check actual connection
             },
-            "timestamp": datetime.utcnow().isoformat()
+            "timestamp": datetime.now(timezone.utc).isoformat()
         }
     except Exception as e:
         logger.error("Failed to get metrics", error=str(e))
@@ -173,7 +173,7 @@ async def update_system_setting(
     result = await db.client.table("system_settings").upsert({
         "key": key,
         "value": update.value,
-        "updated_at": datetime.utcnow().isoformat(),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
         "updated_by": user.get("id")
     }).execute()
     
@@ -229,7 +229,7 @@ async def update_feature_flag(
             "key": key,
             "enabled": update.enabled,
             "description": update.description,
-            "updated_at": datetime.utcnow().isoformat()
+            "updated_at": datetime.now(timezone.utc).isoformat()
         }).execute()
         return result.data[0] if result.data else {"key": key, "enabled": update.enabled}
     except:
@@ -295,7 +295,7 @@ async def update_discovery_config(
         await db.client.table("system_settings").upsert({
             "key": full_key,
             "value": value,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
             "updated_by": user.get("id")
         }).execute()
     
@@ -332,7 +332,7 @@ async def trigger_discovery(
             raise HTTPException(status_code=400, detail="No discovery connectors are configured. Add API keys in Settings.")
 
         since_days = int(payload.get("since_days") or 7)
-        since = datetime.utcnow() - timedelta(days=max(1, since_days))
+        since = datetime.now(timezone.utc) - timedelta(days=max(1, since_days))
 
         run_ids: list[str] = []
         results: dict[str, Any] = {}
@@ -344,7 +344,7 @@ async def trigger_discovery(
                 results[name] = {"success": False, "error": "missing api key"}
                 continue
 
-            start_time = datetime.utcnow()
+            start_time = datetime.now(timezone.utc)
             run_id = None
             try:
                 run = supabase.table("discovery_runs").insert(
@@ -370,7 +370,7 @@ async def trigger_discovery(
             if opps:
                 supabase.table("opportunities").upsert(opps, on_conflict="external_ref").execute()
 
-            end_time = datetime.utcnow()
+            end_time = datetime.now(timezone.utc)
             if run_id:
                 try:
                     supabase.table("discovery_runs").update(
@@ -502,13 +502,13 @@ async def update_workflow_config(
     await db.client.table("system_settings").upsert({
         "key": "autonomy_enabled",
         "value": config.autonomy_enabled,
-        "updated_at": datetime.utcnow().isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }).execute()
     
     await db.client.table("system_settings").upsert({
         "key": "autonomy_threshold_usd",
         "value": config.autonomy_threshold,
-        "updated_at": datetime.utcnow().isoformat()
+        "updated_at": datetime.now(timezone.utc).isoformat()
     }).execute()
     
     return {"updated": True}
@@ -638,7 +638,8 @@ async def list_users(
         if role:
             query = query.eq("role", role)
         if search:
-            query = query.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
+            safe_search = search.replace(",", "").replace("(", "").replace(")", "")
+            query = query.or_(f"email.ilike.%{safe_search}%,full_name.ilike.%{safe_search}%")
 
         query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
 
@@ -654,6 +655,100 @@ async def list_users(
     except Exception as e:
         logger.error("Failed to list users", error=str(e))
         raise HTTPException(status_code=500, detail="Failed to fetch users")
+
+
+@router.get("/users/{user_id}")
+async def get_user(
+    user_id: str,
+    supabase: Client = Depends(get_request_supabase),
+    user: dict = Depends(require_role(["admin"]))
+):
+    """Get a single user profile by ID"""
+    try:
+        response = supabase.table("profiles").select("*").eq("id", user_id).single().execute()
+        if not response.data:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {"success": True, "data": response.data}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to get user", user_id=user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch user")
+
+
+@router.patch("/users/{user_id}", response_model=BaseResponse)
+async def update_user(
+    user_id: str,
+    updates: dict = Body(...),
+    supabase: Client = Depends(get_request_supabase),
+    user: dict = Depends(require_role(["admin"]))
+):
+    """Update a user profile (admin only). Accepts full_name, department, role."""
+    try:
+        if user_id == user.get("id") and "role" in updates:
+            raise HTTPException(status_code=400, detail="Cannot change your own role")
+
+        existing = supabase.table("profiles").select("id").eq("id", user_id).execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        allowed_fields = {"full_name", "department", "role"}
+        safe_updates = {k: v for k, v in updates.items() if k in allowed_fields and v is not None}
+        if not safe_updates:
+            raise HTTPException(status_code=400, detail="No valid fields to update")
+
+        supabase.table("profiles").update(safe_updates).eq("id", user_id).execute()
+
+        logger.info("User updated", target_user_id=user_id, fields=list(safe_updates.keys()), by=user.get("email"))
+        return BaseResponse(success=True, message="User updated")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to update user", user_id=user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update user")
+
+
+@router.post("/users/invite", response_model=BaseResponse)
+async def invite_user(
+    invite: dict = Body(...),
+    supabase: Client = Depends(get_request_supabase),
+    user: dict = Depends(require_role(["admin"]))
+):
+    """Invite a new user by email with a specified role."""
+    try:
+        email = invite.get("email")
+        role = invite.get("role", "viewer")
+
+        if not email:
+            raise HTTPException(status_code=400, detail="Email is required")
+        if role not in ["admin", "contract_officer", "viewer"]:
+            raise HTTPException(status_code=400, detail="Invalid role")
+
+        # Check if user already exists
+        existing = supabase.table("profiles").select("id").eq("email", email).execute()
+        if existing.data:
+            raise HTTPException(status_code=409, detail="User already exists")
+
+        from ..database import get_supabase_client
+        admin_client = get_supabase_client()
+        result = admin_client.auth.admin.invite_user_by_email(email)
+
+        if result.user:
+            # Set the role on the profile that will be created by the trigger
+            try:
+                admin_client.table("profiles").update({"role": role}).eq("id", result.user.id).execute()
+            except Exception:
+                pass  # Profile may not exist yet if trigger hasn't fired
+
+        logger.info("User invited", email=email, role=role, by=user.get("email"))
+        return BaseResponse(success=True, message=f"Invitation sent to {email}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to invite user", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to invite user")
 
 
 @router.patch("/users/{user_id}/role", response_model=BaseResponse)

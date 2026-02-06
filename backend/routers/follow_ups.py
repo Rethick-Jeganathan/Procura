@@ -2,7 +2,7 @@
 Follow-ups Router
 Application tracking and automated follow-up management.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from supabase import Client
@@ -116,7 +116,7 @@ async def create_follow_up(
             "opportunity_id": sub.data.get("opportunity_id"),
             "status": "pending",
             "check_type": check_type,
-            "next_check_at": (datetime.utcnow() + timedelta(hours=check_interval_hours)).isoformat(),
+            "next_check_at": (datetime.now(timezone.utc) + timedelta(hours=check_interval_hours)).isoformat(),
             "check_interval_hours": check_interval_hours,
             "max_checks": max_checks,
             "assigned_to": user["id"],
@@ -194,7 +194,7 @@ async def trigger_manual_check(
 
         # Update follow-up
         supabase.table("follow_ups").update({
-            "last_checked_at": datetime.utcnow().isoformat(),
+            "last_checked_at": datetime.now(timezone.utc).isoformat(),
             "last_result": result,
             "portal_status": result.get("status"),
             "checks_performed": fu.data["checks_performed"] + 1,

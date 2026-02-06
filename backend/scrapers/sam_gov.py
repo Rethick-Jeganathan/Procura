@@ -4,7 +4,7 @@ Fetches contract opportunities from official SAM.gov API
 NOTE: Must use official API only - scraping is prohibited per SAM.gov ToS
 """
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import structlog
 
 from .base import BaseConnector
@@ -30,7 +30,7 @@ class SAMGovConnector(BaseConnector):
         """Fetch opportunities from SAM.gov API"""
         params = {
             "limit": 100,
-            "postedFrom": (since or datetime.utcnow()).strftime("%m/%d/%Y"),
+            "postedFrom": (since or datetime.now(timezone.utc)).strftime("%m/%d/%Y"),
             "status": "active"
         }
         

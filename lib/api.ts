@@ -446,20 +446,26 @@ class ProcuraAPI {
     }
 
     async uploadDocument(formData: FormData) {
-        const token = localStorage.getItem('supabase_token');
-        const response = await fetch(`${this.baseUrl}/documents`, {
+        const headers: Record<string, string> = {};
+        if (this.token) {
+            headers['Authorization'] = `Bearer ${this.token}`;
+        }
+        const response = await fetch(`${API_BASE}/documents`, {
             method: 'POST',
-            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            headers,
             body: formData,
         });
         return response.json();
     }
 
     async uploadDocumentVersion(documentId: string, formData: FormData) {
-        const token = localStorage.getItem('supabase_token');
-        const response = await fetch(`${this.baseUrl}/documents/${documentId}/new-version`, {
+        const headers: Record<string, string> = {};
+        if (this.token) {
+            headers['Authorization'] = `Bearer ${this.token}`;
+        }
+        const response = await fetch(`${API_BASE}/documents/${documentId}/new-version`, {
             method: 'POST',
-            headers: token ? { 'Authorization': `Bearer ${token}` } : {},
+            headers,
             body: formData,
         });
         return response.json();

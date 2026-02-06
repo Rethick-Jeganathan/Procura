@@ -3,7 +3,7 @@ USAspending API Connector
 Fetches contract award data from USAspending.gov
 """
 from typing import List, Dict, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 import structlog
 
 from .base import BaseConnector
@@ -28,7 +28,7 @@ class USASpendingConnector(BaseConnector):
         # This is useful for market research and past performance
         payload = {
             "filters": {
-                "time_period": [{"start_date": (since or datetime.utcnow()).strftime("%Y-%m-%d"), "end_date": datetime.utcnow().strftime("%Y-%m-%d")}],
+                "time_period": [{"start_date": (since or datetime.now(timezone.utc)).strftime("%Y-%m-%d"), "end_date": datetime.now(timezone.utc).strftime("%Y-%m-%d")}],
                 "award_type_codes": ["A", "B", "C", "D"]  # Contract types
             },
             "limit": 100,

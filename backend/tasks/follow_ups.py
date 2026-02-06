@@ -3,7 +3,7 @@ Follow-up Tasks
 Celery tasks for automated application follow-up checks and opportunity sync.
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from celery import shared_task
 import structlog
 
@@ -28,7 +28,7 @@ async def _run_follow_up_checks():
 
     try:
         # Get all follow-ups that are due for checking
-        now = datetime.utcnow().isoformat()
+        now = datetime.now(timezone.utc).isoformat()
         pending = (
             supabase.table("follow_ups")
             .select("*, submission:submissions(id, title, portal, status)")
@@ -76,11 +76,11 @@ async def _run_follow_up_checks():
                 # Update follow-up record
                 new_status = "updated" if result.get("changed") else "checked"
                 interval = follow_up["check_interval_hours"]
-                next_check = datetime.utcnow() + timedelta(hours=interval)
+                next_check = datetime.now(timezone.utc) + timedelta(hours=interval)
 
                 update_data = {
                     "status": new_status,
-                    "last_checked_at": datetime.utcnow().isoformat(),
+                    "last_checked_at": datetime.now(timezone.utc).isoformat(),
                     "last_result": result,
                     "portal_status": result.get("status"),
                     "checks_performed": follow_up["checks_performed"] + 1,

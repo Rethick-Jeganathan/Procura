@@ -3,7 +3,7 @@ Discovery Tasks
 Celery tasks for scheduled opportunity discovery
 """
 import asyncio
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from celery import shared_task
 import structlog
 
@@ -33,7 +33,7 @@ def run_discovery_task(self, connector_name: str, since_days: int = 7):
 async def _run_discovery(connector_name: str, since_days: int, task_id: str):
     """Async discovery implementation"""
     supabase = get_supabase_client()
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
     
     # Create run record
     run = supabase.table("discovery_runs").insert({
@@ -69,7 +69,7 @@ async def _run_discovery(connector_name: str, since_days: int, task_id: str):
         
         # Run discovery
         async with connector_class(api_key=api_key) as connector:
-            since = datetime.utcnow() - timedelta(days=since_days)
+            since = datetime.now(timezone.utc) - timedelta(days=since_days)
             result = await connector.run_discovery(since)
         
         # Process opportunities
@@ -90,7 +90,7 @@ async def _run_discovery(connector_name: str, since_days: int, task_id: str):
                 logger.warning("Failed to upsert opportunity", error=str(e))
         
         # Update run record
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         supabase.table("discovery_runs").update({
             "status": "success",
             "end_time": end_time.isoformat(),
@@ -118,7 +118,7 @@ async def _run_discovery(connector_name: str, since_days: int, task_id: str):
         # Update run as failed
         supabase.table("discovery_runs").update({
             "status": "failed",
-            "end_time": datetime.utcnow().isoformat(),
+            "end_time": datetime.now(timezone.utc).isoformat(),
             "error_message": str(e)
         }).eq("id", run_id).execute()
         

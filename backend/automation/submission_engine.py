@@ -2,7 +2,7 @@
 Submission Engine
 Orchestrates the automated submission process via browser-use powered OpenManusClient.
 """
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 import structlog
 
@@ -30,7 +30,7 @@ async def execute_submission(
     5. Update submission status
     """
     supabase = get_supabase_client()
-    start_time = datetime.utcnow()
+    start_time = datetime.now(timezone.utc)
 
     try:
         # Update run status
@@ -113,7 +113,7 @@ async def execute_submission(
                 dry_run=dry_run,
             )
 
-        end_time = datetime.utcnow()
+        end_time = datetime.now(timezone.utc)
         duration_ms = int((end_time - start_time).total_seconds() * 1000)
 
         # Update run with result
@@ -198,7 +198,7 @@ async def execute_submission(
         # Update run as failed
         supabase.table("submission_runs").update({
             "status": "failed",
-            "end_time": datetime.utcnow().isoformat(),
+            "end_time": datetime.now(timezone.utc).isoformat(),
             "error_message": str(e),
             "current_step": "error",
         }).eq("id", run_id).execute()

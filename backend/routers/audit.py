@@ -3,7 +3,7 @@ Audit Logs Router
 Cryptographically signed audit trail management
 """
 from typing import Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 from fastapi.responses import StreamingResponse
 from supabase import Client
@@ -77,7 +77,7 @@ async def export_logs(
     """Export audit logs as JSON"""
     response = supabase.table("audit_logs").select("*").order("timestamp", desc=True).execute()
     
-    export_data = {"exported_at": datetime.utcnow().isoformat(), "logs": response.data}
+    export_data = {"exported_at": datetime.now(timezone.utc).isoformat(), "logs": response.data}
     output = io.BytesIO(json.dumps(export_data, default=str).encode())
     output.seek(0)
     

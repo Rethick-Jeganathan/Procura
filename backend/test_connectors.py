@@ -15,7 +15,7 @@ from __future__ import annotations
 import asyncio
 import os
 import sys
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 import httpx
 
@@ -52,8 +52,8 @@ async def test_usaspending() -> list[dict]:
             "filters": {
                 "time_period": [
                     {
-                        "start_date": (datetime.utcnow() - timedelta(days=30)).strftime("%Y-%m-%d"),
-                        "end_date": datetime.utcnow().strftime("%Y-%m-%d"),
+                        "start_date": (datetime.now(timezone.utc) - timedelta(days=30)).strftime("%Y-%m-%d"),
+                        "end_date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
                     }
                 ],
                 "award_type_codes": ["A", "B", "C", "D"],  # Contracts
@@ -131,8 +131,8 @@ async def test_sam_gov() -> list[dict]:
     async with httpx.AsyncClient(timeout=30.0) as client:
         params = {
             "limit": 10,
-            "postedFrom": (datetime.utcnow() - timedelta(days=7)).strftime("%m/%d/%Y"),
-            "postedTo": datetime.utcnow().strftime("%m/%d/%Y"),
+            "postedFrom": (datetime.now(timezone.utc) - timedelta(days=7)).strftime("%m/%d/%Y"),
+            "postedTo": datetime.now(timezone.utc).strftime("%m/%d/%Y"),
             "status": "active",
         }
 
@@ -176,7 +176,7 @@ async def test_govcon() -> list[dict]:
 async def main() -> dict:
     print("=" * 60)
     print("PROCURA DISCOVERY CONNECTOR TEST")
-    print(f"Time: {datetime.utcnow().isoformat()}")
+    print(f"Time: {datetime.now(timezone.utc).isoformat()}")
     print("=" * 60)
 
     usaspending_data = await test_usaspending()

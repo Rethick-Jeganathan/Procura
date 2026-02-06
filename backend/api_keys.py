@@ -164,7 +164,7 @@ def store_api_key(key_name: str, value: str, user_id: Optional[str] = None) -> b
     """Encrypt and store an API key in system_settings."""
     from .database import get_supabase_client
     from .security.vault import encrypt_credentials
-    from datetime import datetime
+    from datetime import datetime, timezone
 
     try:
         encrypted = encrypt_credentials({"value": value})
@@ -173,7 +173,7 @@ def store_api_key(key_name: str, value: str, user_id: Optional[str] = None) -> b
             "key": f"api_key.{key_name}",
             "value": encrypted,
             "updated_by": user_id,
-            "updated_at": datetime.utcnow().isoformat(),
+            "updated_at": datetime.now(timezone.utc).isoformat(),
         }).execute()
 
         # Update cache

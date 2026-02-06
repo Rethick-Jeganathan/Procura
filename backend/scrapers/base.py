@@ -4,7 +4,7 @@ Abstract base class for all data source connectors
 """
 from abc import ABC, abstractmethod
 from typing import List, Dict, Optional, Any
-from datetime import datetime
+from datetime import datetime, timezone
 import httpx
 from tenacity import retry, stop_after_attempt, wait_exponential
 import structlog
@@ -68,7 +68,7 @@ class BaseConnector(ABC):
     
     async def run_discovery(self, since: Optional[datetime] = None) -> Dict[str, Any]:
         """Run full discovery process"""
-        start_time = datetime.utcnow()
+        start_time = datetime.now(timezone.utc)
         result = {
             "connector": self.name,
             "source": self.source,
@@ -97,12 +97,12 @@ class BaseConnector(ABC):
                     logger.warning("Failed to normalize opportunity", error=str(e))
                     result["errors"].append(str(e))
             
-            result["end_time"] = datetime.utcnow()
+            result["end_time"] = datetime.now(timezone.utc)
             result["success"] = True
             
         except Exception as e:
             logger.error("Discovery failed", connector=self.name, error=str(e))
-            result["end_time"] = datetime.utcnow()
+            result["end_time"] = datetime.now(timezone.utc)
             result["success"] = False
             result["errors"].append(str(e))
         

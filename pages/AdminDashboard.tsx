@@ -668,6 +668,7 @@ const AdminDashboard: React.FC = () => {
                             </div>
                             <div className={`p-6 rounded-xl border ${darkMode ? 'bg-[#111] border-neutral-800' : 'bg-white border-gray-100'}`}>
                                 <h3 className={`text-lg font-semibold mb-4 ${darkMode ? 'text-white' : 'text-gray-900'}`}>Compliance Readiness</h3>
+                                <p className={`text-xs mb-3 ${darkMode ? 'text-gray-500' : 'text-gray-400'}`}>Estimated readiness — connect compliance tooling for live tracking.</p>
                                 <div className="space-y-3">
                                     {[
                                         { label: 'SOC 2 Type II', progress: 75 },
