@@ -72,7 +72,8 @@ async def list_correspondence(
         if submission_id:
             query = query.eq("submission_id", submission_id)
         if search:
-            query = query.ilike("subject", f"%{search}%")
+            safe_search = search.replace(",", "").replace("(", "").replace(")", "").replace(".", "")
+            query = query.ilike("subject", f"%{safe_search}%")
 
         query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
         response = query.execute()
@@ -93,10 +94,12 @@ async def correspondence_stats(
     supabase: Client = Depends(get_request_supabase),
     user: dict = Depends(get_current_user)
 ):
-    """Get correspondence statistics"""
+    """Get correspondence statistics (admin sees all, others see own)"""
     try:
-        # Count by type
-        all_corr = supabase.table("correspondence").select("type, status").execute()
+        query = supabase.table("correspondence").select("type, status")
+        if user.get("role") != "admin":
+            query = query.or_(f"recipient_id.eq.{user['id']},sender_id.eq.{user['id']}")
+        all_corr = query.execute()
 
         stats = {
             "total": len(all_corr.data),
@@ -144,6 +147,11 @@ async def get_correspondence(
         )
         if not c.data:
             raise HTTPException(status_code=404, detail="Correspondence not found")
+
+        # Ownership check: non-admins can only see their own correspondence
+        if user.get("role") != "admin":
+            if c.data.get("recipient_id") != user["id"] and c.data.get("sender_id") != user["id"]:
+                raise HTTPException(status_code=403, detail="Not authorized to view this correspondence")
 
         # Auto-mark as read
         if c.data.get("status") == "new":
@@ -264,6 +272,10 @@ async def update_correspondence_status(
         if new_status not in VALID_STATUSES:
             raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {VALID_STATUSES}")
 
+        existing = supabase.table("correspondence").select("id").eq("id", correspondence_id).execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Correspondence not found")
+
         supabase.table("correspondence").update({
             "status": new_status,
         }).eq("id", correspondence_id).execute()
@@ -286,6 +298,10 @@ async def respond_to_correspondence(
 ):
     """Record a response to correspondence"""
     try:
+        existing = supabase.table("correspondence").select("id").eq("id", correspondence_id).execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Correspondence not found")
+
         supabase.table("correspondence").update({
             "status": "responded",
             "responded_at": datetime.now(timezone.utc).isoformat(),
@@ -295,6 +311,8 @@ async def respond_to_correspondence(
 
         return {"success": True, "message": "Response recorded"}
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to record response", error=str(e))
         raise HTTPException(status_code=500, detail="Failed to record response")

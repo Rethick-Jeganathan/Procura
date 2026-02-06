@@ -25,9 +25,9 @@ async def list_audit_logs(
     portal: Optional[str] = None,
     limit: int = Query(100, ge=1, le=500),
     supabase: Client = Depends(get_request_supabase),
-    user: dict = Depends(get_current_user)
+    user: dict = Depends(require_admin)
 ):
-    """List audit logs with optional filters"""
+    """List audit logs with optional filters (admin only)"""
     try:
         query = supabase.table("audit_logs").select("*")
         

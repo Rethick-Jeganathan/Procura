@@ -16,8 +16,8 @@ import FollowUps from './pages/FollowUps';
 import Correspondence from './pages/Correspondence';
 import NotFound from './pages/NotFound';
 
-// Protected Route wrapper
-const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+// Protected Route wrapper with optional role-based access control
+const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: string[] }> = ({ children, allowedRoles }) => {
   const { user, loading } = useAuth();
 
   if (loading) {
@@ -31,6 +31,14 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) =
   // Require authentication
   if (!user) {
     return <Navigate to="/" replace />;
+  }
+
+  // Role-based access check
+  if (allowedRoles) {
+    const userRole = (user as any).user_metadata?.role || 'viewer';
+    if (!allowedRoles.includes(userRole)) {
+      return <Navigate to="/access-denied" replace />;
+    }
   }
 
   return <>{children}</>;
@@ -68,9 +76,9 @@ const App = () => {
           <Route path="/" element={<LandingPage />} />
           <Route path="/reset-password" element={<ResetPassword />} />
 
-          {/* Admin Dashboard - Full page, no sidebar */}
+          {/* Admin Dashboard - Full page, no sidebar, admin-only */}
           <Route path="/admin/*" element={
-            <ProtectedRoute>
+            <ProtectedRoute allowedRoles={['admin']}>
               <AdminDashboard />
             </ProtectedRoute>
           } />

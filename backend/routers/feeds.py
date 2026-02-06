@@ -60,6 +60,13 @@ async def get_news_feed(
         )
 
     base = (settings.NEWS_API_BASE or "https://newsapi.org/v2").rstrip("/")
+    # SSRF guard: only allow known external hosts
+    from urllib.parse import urlparse
+    parsed = urlparse(base)
+    allowed_hosts = {"newsapi.org", "www.newsapi.org"}
+    if parsed.hostname not in allowed_hosts:
+        logger.warning("NEWS_API_BASE points to disallowed host", host=parsed.hostname)
+        raise HTTPException(status_code=500, detail="News feed misconfigured")
     from_date = (datetime.now(timezone.utc) - timedelta(days=days)).date().isoformat()
 
     params = {

@@ -36,13 +36,21 @@ class ErrorBoundary extends Component<Props, State> {
             <p className="text-sm text-gray-500 mb-6">
               {this.state.error?.message || 'An unexpected error occurred. Please try refreshing the page.'}
             </p>
-            <button
-              onClick={() => window.location.reload()}
-              className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800"
-            >
-              <RefreshCw size={14} />
-              Reload Page
-            </button>
+            <div className="flex items-center gap-3 justify-center">
+              <button
+                onClick={() => this.setState({ hasError: false, error: null })}
+                className="inline-flex items-center gap-2 px-4 py-2 border border-gray-200 text-gray-700 rounded-lg text-sm font-medium hover:bg-gray-50"
+              >
+                Try Again
+              </button>
+              <button
+                onClick={() => window.location.reload()}
+                className="inline-flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800"
+              >
+                <RefreshCw size={14} />
+                Reload Page
+              </button>
+            </div>
           </div>
         </div>
       );

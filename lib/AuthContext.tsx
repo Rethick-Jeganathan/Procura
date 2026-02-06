@@ -7,10 +7,12 @@ const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY;
 
 if (!supabaseUrl || !supabaseAnonKey) {
-    console.warn('Supabase credentials missing. Auth will be disabled.');
+    console.error('FATAL: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment.');
 }
 
-export const supabase = createClient(supabaseUrl ?? '', supabaseAnonKey ?? '', {
+export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
+
+export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
     auth: {
         autoRefreshToken: true,
         persistSession: true,
@@ -66,6 +68,18 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [isMFAEnabled, setIsMFAEnabled] = useState(false);
     const [needsMFAVerification, setNeedsMFAVerification] = useState(false);
 
+    // Fail-fast if Supabase is not configured
+    if (!supabaseConfigured) {
+        return (
+            <div className="flex h-screen w-full items-center justify-center bg-white">
+                <div className="text-center max-w-md p-8">
+                    <h1 className="text-2xl font-bold text-red-600 mb-4">Configuration Required</h1>
+                    <p className="text-gray-600">VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in your environment variables.</p>
+                </div>
+            </div>
+        );
+    }
+
     useEffect(() => {
         let cancelled = false;
         const safetyTimeout = setTimeout(() => {
@@ -77,16 +91,9 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
         const initSession = async () => {
             try {
-                console.log('Initializing auth session...');
                 const { data: { session }, error } = await supabase.auth.getSession();
 
-                if (error) {
-                    console.error('Auth session error:', error);
-                }
-
                 if (cancelled) return;
-
-                console.log('Session retrieved:', session ? 'Active' : 'None');
                 setSession(session);
                 setUser(session?.user ?? null);
 
@@ -97,8 +104,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 }
 
                 await checkMFAStatus(session?.user ?? null);
-            } catch (error) {
-                console.error('Failed to initialize auth session:', error);
+            } catch {
             } finally {
                 if (!cancelled) {
                     clearTimeout(safetyTimeout);
@@ -129,8 +135,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                         setIsMFAEnabled(false);
                         setNeedsMFAVerification(false);
                     }
-                } catch (error) {
-                    console.error('Auth state change handler failed:', error);
+                } catch {
                 } finally {
                     setLoading(false);
                 }
@@ -161,20 +166,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const signIn = async (email: string, password: string) => {
         try {
-            console.log('Attempting sign in with Supabase...');
             const { data, error } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             });
 
-            console.log('Sign in response:', {
-                success: !error,
-                hasSession: !!data.session,
-                error: error?.message
-            });
-
             if (!error && data.session) {
-                console.log('Login successful, setting session...');
                 setSession(data.session);
                 setUser(data.user);
                 api.setToken(data.session.access_token);
@@ -187,7 +184,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
             return { error };
         } catch (err) {
-            console.error('Sign in exception:', err);
             return { error: err as AuthError };
         }
     };

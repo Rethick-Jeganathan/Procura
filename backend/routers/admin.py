@@ -107,7 +107,7 @@ async def get_dashboard_metrics(
             "opportunities": {
                 "total": len(opps),
                 "by_status": opp_by_status,
-                "new_today": len([o for o in opps if o.get("created_at", "").startswith(datetime.now().strftime("%Y-%m-%d"))])
+                "new_today": len([o for o in opps if o.get("created_at", "").startswith(datetime.now(timezone.utc).strftime("%Y-%m-%d"))])
             },
             "submissions": {
                 "total": len(subs),
@@ -135,7 +135,7 @@ async def get_dashboard_metrics(
         }
     except Exception as e:
         logger.error("Failed to get metrics", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Failed to retrieve dashboard metrics")
 
 
 # ============================================
@@ -204,8 +204,8 @@ async def list_feature_flags(
     try:
         result = await db.client.table("feature_flags").select("*").execute()
         return {"flags": result.data}
-    except:
-        # Return default flags
+    except Exception:
+        # Return default flags if table doesn't exist yet
         return {
             "flags": [
                 {"key": "discovery_enabled", "enabled": True, "description": "Enable automated discovery"},
@@ -232,7 +232,7 @@ async def update_feature_flag(
             "updated_at": datetime.now(timezone.utc).isoformat()
         }).execute()
         return result.data[0] if result.data else {"key": key, "enabled": update.enabled}
-    except:
+    except Exception:
         return {"key": key, "enabled": update.enabled, "description": update.description}
 
 
@@ -331,7 +331,7 @@ async def trigger_discovery(
         if not connector_names:
             raise HTTPException(status_code=400, detail="No discovery connectors are configured. Add API keys in Settings.")
 
-        since_days = int(payload.get("since_days") or 7)
+        since_days = min(int(payload.get("since_days") or 7), 365)
         since = datetime.now(timezone.utc) - timedelta(days=max(1, since_days))
 
         run_ids: list[str] = []
@@ -399,7 +399,7 @@ async def trigger_discovery(
         return {"triggered": True, "source": requested_source, "run_ids": run_ids, "results": results}
     except Exception as e:
         logger.error("Discovery trigger failed", error=str(e))
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Discovery trigger failed")
 
 
 # ============================================
@@ -638,7 +638,7 @@ async def list_users(
         if role:
             query = query.eq("role", role)
         if search:
-            safe_search = search.replace(",", "").replace("(", "").replace(")", "")
+            safe_search = search.replace(",", "").replace("(", "").replace(")", "").replace(".", "")
             query = query.or_(f"email.ilike.%{safe_search}%,full_name.ilike.%{safe_search}%")
 
         query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
@@ -817,6 +817,14 @@ async def delete_user(
 
         # Delete from profiles table
         supabase.table("profiles").delete().eq("id", user_id).execute()
+
+        # Also delete from Supabase Auth to prevent re-login
+        try:
+            from ..database import get_supabase_client
+            admin_client = get_supabase_client()
+            admin_client.auth.admin.delete_user(user_id)
+        except Exception as auth_err:
+            logger.warning("Failed to delete auth record (profile was deleted)", user_id=user_id, error=str(auth_err))
 
         logger.info(
             "User deleted",

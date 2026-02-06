@@ -34,14 +34,12 @@ const AccessDenied: React.FC = () => {
             <div className="mt-8 pt-6 border-t border-gray-100">
                <div className="flex items-center justify-center gap-2 text-xs text-gray-400 font-mono bg-gray-50 py-2 rounded-lg">
                   <span>ERR_403_FORBIDDEN</span>
-                  <span>•</span>
-                  <span>ID: {Math.random().toString(36).substr(2, 8).toUpperCase()}</span>
                </div>
             </div>
          </div>
 
          <p className="text-xs text-gray-400 mt-8">
-            © 2025 Procura Ops Command. Security Event Logged.
+            © {new Date().getFullYear()} Procura Ops Command.
          </p>
       </div>
    );

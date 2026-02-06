@@ -48,7 +48,6 @@ ALLOWED_MIME_TYPES = {
     "image/jpeg",
     "image/gif",
     "application/zip",
-    "application/octet-stream",
 }
 
 MAX_FILE_SIZE = 50 * 1024 * 1024  # 50 MB
@@ -158,7 +157,8 @@ async def list_submissions(
         if approval_status:
             query = query.eq("approval_status", approval_status.value)
         if search:
-            query = query.ilike("title", f"%{search}%")
+            safe_search = search.replace(",", "").replace("(", "").replace(")", "").replace(".", "")
+            query = query.ilike("title", f"%{safe_search}%")
 
         query = query.order("due_date", desc=False).range(offset, offset + limit - 1)
 
@@ -409,16 +409,23 @@ async def reject_submission(
 ):
     """Reject a submission"""
     try:
+        # Verify submission exists
+        existing = supabase.table("submissions").select("id, owner_id").eq("id", submission_id).single().execute()
+        if not existing.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Submission not found")
+
         supabase.table("submissions").update({
             "status": "rejected",
             "approval_status": "rejected",
             "notes": reason
         }).eq("id", submission_id).execute()
 
-        logger.info("Submission rejected", id=submission_id, reason=reason)
+        logger.info("Submission rejected", id=submission_id, reason=reason, by=user["id"])
 
         return BaseResponse(success=True, message="Submission rejected")
 
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to reject", id=submission_id, error=str(e))
         raise HTTPException(
@@ -536,8 +543,12 @@ async def update_task(
         if user.get("role") != "admin" and submission.data["owner_id"] != user["id"]:
             raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized")
 
-        task = supabase.table("submission_tasks").select("locked").eq("id", task_id).single().execute()
-        if task.data and task.data["locked"]:
+        task = supabase.table("submission_tasks").select("locked, submission_id").eq("id", task_id).single().execute()
+        if not task.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Task not found")
+        if task.data.get("submission_id") != submission_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Task does not belong to this submission")
+        if task.data["locked"]:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This task is locked")
 
         supabase.table("submission_tasks").update({
@@ -602,9 +613,34 @@ async def upload_submission_file(
                 detail="Not authorized to upload files to this submission",
             )
 
-        file_content = await file.read()
-        file_size = len(file_content)
-        file_name = file.filename or "untitled"
+        # Read in chunks to enforce size limit without buffering unbounded data
+        chunks = []
+        total_size = 0
+        while True:
+            chunk = await file.read(8192)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > MAX_FILE_SIZE:
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="File too large. Maximum size is 50 MB.",
+                )
+            chunks.append(chunk)
+        file_content = b"".join(chunks)
+        file_size = total_size
+
+        if file_size == 0:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="File is empty.",
+            )
+
+        # Sanitize filename: strip path components to prevent path traversal
+        raw_name = file.filename or "untitled"
+        file_name = Path(raw_name).name.lstrip(".")  # strip ../ and leading dots
+        if not file_name:
+            file_name = "untitled"
         file_type = file.content_type or "application/octet-stream"
 
         # Run safety scan

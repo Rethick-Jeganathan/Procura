@@ -20,6 +20,7 @@ const FollowUps = () => {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [checkHistory, setCheckHistory] = useState<any[]>([]);
   const [checkingId, setCheckingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const loadFollowUps = useCallback(async () => {
     setLoading(true);
@@ -29,7 +30,9 @@ const FollowUps = () => {
         setFollowUps(res.data);
         setTotal(res.total || res.data.length);
       }
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('Failed to load follow-ups. Please try again.');
+    } finally {
       setLoading(false);
     }
   }, [statusFilter]);
@@ -45,7 +48,9 @@ const FollowUps = () => {
     try {
       const res = await api.getFollowUp(id);
       if (res.checks) setCheckHistory(res.checks);
-    } catch { /* ignore */ }
+    } catch {
+      setError('Failed to load check history.');
+    }
   };
 
   const handleManualCheck = async (id: string) => {
@@ -57,7 +62,9 @@ const FollowUps = () => {
         const res = await api.getFollowUp(id);
         if (res.checks) setCheckHistory(res.checks);
       }
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('Manual check failed. Please try again.');
+    } finally {
       setCheckingId(null);
     }
   };
@@ -107,6 +114,14 @@ const FollowUps = () => {
           );
         })}
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
+        </div>
+      )}
 
       {/* List */}
       {loading ? (

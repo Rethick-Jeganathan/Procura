@@ -46,7 +46,8 @@ async def list_documents(
         if category:
             query = query.eq("category", category)
         if search:
-            query = query.ilike("name", f"%{search}%")
+            safe_search = search.replace(",", "").replace("(", "").replace(")", "").replace(".", "")
+            query = query.ilike("name", f"%{safe_search}%")
         if tags:
             tag_list = [t.strip() for t in tags.split(",")]
             query = query.overlaps("tags", tag_list)
@@ -123,9 +124,29 @@ async def upload_document(
         if category not in VALID_CATEGORIES:
             raise HTTPException(status_code=400, detail=f"Invalid category. Must be one of: {VALID_CATEGORIES}")
 
-        file_content = await file.read()
-        file_size = len(file_content)
-        file_name = file.filename or "untitled"
+        # Read in chunks to enforce size limit without buffering unbounded data
+        max_size = 50 * 1024 * 1024
+        chunks = []
+        total_size = 0
+        while True:
+            chunk = await file.read(8192)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_size:
+                raise HTTPException(status_code=400, detail="File too large. Maximum size is 50 MB.")
+            chunks.append(chunk)
+        file_content = b"".join(chunks)
+        file_size = total_size
+
+        if file_size == 0:
+            raise HTTPException(status_code=400, detail="File is empty.")
+
+        # Sanitize filename: strip path components to prevent path traversal
+        raw_name = file.filename or "untitled"
+        file_name = Path(raw_name).name.lstrip(".")
+        if not file_name:
+            file_name = "untitled"
         file_type = file.content_type or "application/octet-stream"
 
         unique_id = uuid.uuid4().hex
@@ -190,8 +211,25 @@ async def upload_new_version(
         if not existing.data:
             raise HTTPException(status_code=404, detail="Document not found")
 
-        file_content = await file.read()
-        file_name = file.filename or existing.data["file_name"]
+        # Read in chunks to enforce size limit
+        max_size = 50 * 1024 * 1024
+        chunks = []
+        total_size = 0
+        while True:
+            chunk = await file.read(8192)
+            if not chunk:
+                break
+            total_size += len(chunk)
+            if total_size > max_size:
+                raise HTTPException(status_code=400, detail="File too large. Maximum size is 50 MB.")
+            chunks.append(chunk)
+        file_content = b"".join(chunks)
+
+        if total_size == 0:
+            raise HTTPException(status_code=400, detail="File is empty.")
+
+        raw_name = file.filename or existing.data["file_name"]
+        file_name = Path(raw_name).name.lstrip(".") or "untitled"
         file_type = file.content_type or existing.data["file_type"]
 
         unique_id = uuid.uuid4().hex
@@ -272,6 +310,13 @@ async def update_document(
         if not updates:
             raise HTTPException(status_code=400, detail="No updates provided")
 
+        # Ownership check: admin or uploader only
+        existing = supabase.table("document_library").select("uploaded_by").eq("id", document_id).single().execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        if user.get("role") != "admin" and existing.data.get("uploaded_by") != user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to modify this document")
+
         supabase.table("document_library").update(updates).eq("id", document_id).execute()
 
         return {"success": True, "message": "Document updated"}
@@ -291,6 +336,12 @@ async def delete_document(
 ):
     """Delete a document from the library"""
     try:
+        existing = supabase.table("document_library").select("uploaded_by").eq("id", document_id).single().execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Document not found")
+        if user.get("role") != "admin" and existing.data.get("uploaded_by") != user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to delete this document")
+
         supabase.table("document_library").delete().eq("id", document_id).execute()
         return {"success": True, "message": "Document deleted"}
     except Exception as e:

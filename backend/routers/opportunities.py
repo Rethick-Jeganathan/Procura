@@ -37,7 +37,7 @@ _SYNC_COOLDOWN_SECONDS = 30
 
 @router.get("", response_model=OpportunityListResponse)
 async def list_opportunities(
-    status: Optional[OpportunityStatus] = None,
+    status_filter: Optional[OpportunityStatus] = Query(None, alias="status"),
     source: Optional[str] = None,
     min_fit_score: Optional[int] = Query(None, ge=0, le=100),
     search: Optional[str] = None,
@@ -50,19 +50,19 @@ async def list_opportunities(
     List opportunities with optional filters
     """
     offset = (page - 1) * limit
-    
+
     try:
         query = supabase.table("opportunities").select("*", count="exact")
-        
-        if status:
-            query = query.eq("status", status.value)
+
+        if status_filter:
+            query = query.eq("status", status_filter.value)
         if source:
             query = query.eq("source", source)
         if min_fit_score is not None:
             query = query.gte("fit_score", min_fit_score)
         if search:
             # Sanitize: strip PostgREST filter control chars to prevent filter injection
-            safe_search = search.replace(",", "").replace("(", "").replace(")", "")
+            safe_search = search.replace(",", "").replace("(", "").replace(")", "").replace(".", "")
             query = query.or_(f"title.ilike.%{safe_search}%,agency.ilike.%{safe_search}%,external_ref.ilike.%{safe_search}%")
         
         query = query.order("due_date", desc=False).range(offset, offset + limit - 1)
@@ -302,6 +302,8 @@ async def trigger_sync(
             run_ids=run_ids,
         )
         
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to trigger sync", error=str(e))
         raise HTTPException(

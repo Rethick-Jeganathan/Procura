@@ -73,6 +73,10 @@ async def get_follow_up(
         if not fu.data:
             raise HTTPException(status_code=404, detail="Follow-up not found")
 
+        # Ownership check: non-admins can only see their own follow-ups
+        if user.get("role") != "admin" and fu.data.get("assigned_to") != user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized to view this follow-up")
+
         # Get check history
         checks = (
             supabase.table("follow_up_checks")
@@ -143,8 +147,11 @@ async def update_follow_up(
 ):
     """Update follow-up settings"""
     try:
+        VALID_STATUSES = {"pending", "checked", "updated", "no_change", "awarded", "lost", "cancelled"}
         updates = {}
         if status_update is not None:
+            if status_update not in VALID_STATUSES:
+                raise HTTPException(status_code=400, detail=f"Invalid status. Must be one of: {sorted(VALID_STATUSES)}")
             updates["status"] = status_update
         if auto_check is not None:
             updates["auto_check"] = auto_check
@@ -153,6 +160,13 @@ async def update_follow_up(
 
         if not updates:
             raise HTTPException(status_code=400, detail="No updates provided")
+
+        # Ownership check
+        existing = supabase.table("follow_ups").select("assigned_to").eq("id", follow_up_id).single().execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Follow-up not found")
+        if user.get("role") != "admin" and existing.data.get("assigned_to") != user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
 
         supabase.table("follow_ups").update(updates).eq("id", follow_up_id).execute()
 
@@ -176,6 +190,8 @@ async def trigger_manual_check(
         fu = supabase.table("follow_ups").select("*").eq("id", follow_up_id).single().execute()
         if not fu.data:
             raise HTTPException(status_code=404, detail="Follow-up not found")
+        if user.get("role") != "admin" and fu.data.get("assigned_to") != user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
 
         # Import and run check inline
         from ..tasks.follow_ups import _check_opportunity_status
@@ -197,7 +213,7 @@ async def trigger_manual_check(
             "last_checked_at": datetime.now(timezone.utc).isoformat(),
             "last_result": result,
             "portal_status": result.get("status"),
-            "checks_performed": fu.data["checks_performed"] + 1,
+            "checks_performed": (fu.data.get("checks_performed") or 0) + 1,
         }).eq("id", follow_up_id).execute()
 
         return {
@@ -220,6 +236,12 @@ async def delete_follow_up(
 ):
     """Delete a follow-up tracker"""
     try:
+        existing = supabase.table("follow_ups").select("assigned_to").eq("id", follow_up_id).single().execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="Follow-up not found")
+        if user.get("role") != "admin" and existing.data.get("assigned_to") != user["id"]:
+            raise HTTPException(status_code=403, detail="Not authorized")
+
         supabase.table("follow_ups").delete().eq("id", follow_up_id).execute()
         return {"success": True, "message": "Follow-up deleted"}
     except Exception as e:

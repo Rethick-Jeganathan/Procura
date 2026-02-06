@@ -1,9 +1,21 @@
 import React, { useState } from 'react';
-import { NavLink } from 'react-router-dom';
+import { NavLink, useNavigate } from 'react-router-dom';
 import { LayoutDashboard, FileText, ShieldAlert, Lock, Briefcase, Gem, ChevronLeft, ChevronRight, LogOut, Settings, FolderOpen, CalendarClock, Mail } from 'lucide-react';
+import { useAuth } from '../lib/AuthContext';
 
 const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const { user, signOut } = useAuth();
+  const navigate = useNavigate();
+
+  const displayName = (user as any)?.user_metadata?.full_name || user?.email?.split('@')[0] || 'User';
+  const userRole = (user as any)?.user_metadata?.role || 'viewer';
+  const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2);
+
+  const handleLogout = async () => {
+    await signOut();
+    navigate('/');
+  };
 
   const navItemClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg transition-all duration-200 group relative ${isActive
@@ -80,12 +92,12 @@ const Sidebar = () => {
       {/* Footer / User Profile */}
       <div className="p-3 border-t border-gray-200 dark:border-neutral-800 flex flex-col gap-2">
         <div className={`flex items-center gap-3 p-2 rounded-lg hover:bg-gray-50 dark:hover:bg-neutral-800 transition-colors cursor-pointer ${isCollapsed ? 'justify-center' : ''}`}>
-          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm ring-2 ring-white dark:ring-neutral-900">AM</div>
+          <div className="h-8 w-8 rounded-full bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center text-white text-xs font-bold shrink-0 shadow-sm ring-2 ring-white dark:ring-neutral-900">{initials}</div>
           <div className={`flex flex-col overflow-hidden whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100 block'}`}>
-            <span className="text-sm font-bold text-gray-900 dark:text-white">Alex Morgan</span>
-            <span className="text-[10px] text-gray-500 uppercase tracking-wide font-medium">SysAdmin</span>
+            <span className="text-sm font-bold text-gray-900 dark:text-white">{displayName}</span>
+            <span className="text-[10px] text-gray-500 uppercase tracking-wide font-medium">{userRole}</span>
           </div>
-          {!isCollapsed && <LogOut size={14} className="ml-auto text-gray-400 hover:text-red-500 transition-colors" />}
+          {!isCollapsed && <button onClick={handleLogout} title="Sign out"><LogOut size={14} className="ml-auto text-gray-400 hover:text-red-500 transition-colors" /></button>}
         </div>
 
         <button

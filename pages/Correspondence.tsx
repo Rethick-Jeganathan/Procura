@@ -47,6 +47,7 @@ const Correspondence = () => {
   const [createAwardAmount, setCreateAwardAmount] = useState('');
   const [createContractNumber, setCreateContractNumber] = useState('');
   const [creating, setCreating] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const loadItems = useCallback(async () => {
     setLoading(true);
@@ -60,7 +61,9 @@ const Correspondence = () => {
         setItems(res.data);
         setTotal(res.total || res.data.length);
       }
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('Failed to load correspondence. Please try again.');
+    } finally {
       setLoading(false);
     }
   }, [typeFilter, statusFilter, search]);
@@ -69,14 +72,14 @@ const Correspondence = () => {
     try {
       const res = await api.getCorrespondenceStats();
       if (res.data) setStats(res.data);
-    } catch { /* ignore */ }
+    } catch { /* stats are non-critical, skip */ }
   }, []);
 
   const loadNotifications = useCallback(async () => {
     try {
       const res = await api.listNotifications(true);
       if (res.data) setNotifications(res.data);
-    } catch { /* ignore */ }
+    } catch { /* notifications are non-critical, skip */ }
   }, []);
 
   useEffect(() => { loadItems(); loadStats(); loadNotifications(); }, [loadItems, loadStats, loadNotifications]);
@@ -99,7 +102,9 @@ const Correspondence = () => {
       setCreateAwardAmount(''); setCreateContractNumber('');
       loadItems();
       loadStats();
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('Failed to create correspondence. Please try again.');
+    } finally {
       setCreating(false);
     }
   };
@@ -109,7 +114,9 @@ const Correspondence = () => {
     try {
       await api.aiAnalyzeCorrespondence(id);
       loadItems();
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('AI analysis failed. Please try again.');
+    } finally {
       setAnalyzing(null);
     }
   };
@@ -201,6 +208,14 @@ const Correspondence = () => {
             <p className="text-xs text-gray-500">Responded</p>
             <p className="text-xl font-bold text-gray-700">{stats.by_status?.responded || 0}</p>
           </div>
+        </div>
+      )}
+
+      {/* Error */}
+      {error && (
+        <div className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
         </div>
       )}
 

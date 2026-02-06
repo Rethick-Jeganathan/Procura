@@ -218,6 +218,11 @@ async def revoke_connector(
     Revoke/disable a connector (admin only)
     """
     try:
+        # Verify connector exists
+        existing = supabase.table("connectors").select("id").eq("id", connector_id).execute()
+        if not existing.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Connector not found")
+
         # Soft delete by setting status to revoked
         supabase.table("connectors").update({
             "status": "revoked"
@@ -226,7 +231,9 @@ async def revoke_connector(
         logger.info("Connector revoked", id=connector_id, user_id=user["id"])
         
         return BaseResponse(success=True, message="Connector revoked")
-        
+
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("Failed to revoke connector", id=connector_id, error=str(e))
         raise HTTPException(
@@ -291,5 +298,5 @@ async def test_connector(
         logger.error("Connector test failed", id=connector_id, error=str(e))
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=f"Connection test failed: {str(e)}"
+            detail="Connection test failed"
         )

@@ -28,6 +28,7 @@ const DocumentLibrary = () => {
   const [uploading, setUploading] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<any>(null);
   const fileRef = useRef<HTMLInputElement>(null);
+  const [error, setError] = useState<string | null>(null);
 
   // Upload form
   const [uploadName, setUploadName] = useState('');
@@ -43,7 +44,9 @@ const DocumentLibrary = () => {
         setDocuments(res.data);
         setTotal(res.total || res.data.length);
       }
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('Failed to load documents. Please try again.');
+    } finally {
       setLoading(false);
     }
   }, [category, search]);
@@ -68,7 +71,9 @@ const DocumentLibrary = () => {
       setUploadName(''); setUploadDesc(''); setUploadTags('');
       if (fileRef.current) fileRef.current.value = '';
       loadDocuments();
-    } catch { /* ignore */ } finally {
+    } catch {
+      setError('Failed to upload document. Please try again.');
+    } finally {
       setUploading(false);
     }
   };
@@ -124,6 +129,14 @@ const DocumentLibrary = () => {
           {CATEGORIES.map(c => <option key={c.value} value={c.value}>{c.label}</option>)}
         </select>
       </div>
+
+      {/* Error */}
+      {error && (
+        <div className="flex items-center justify-between p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700">
+          <span>{error}</span>
+          <button onClick={() => setError(null)} className="text-red-400 hover:text-red-600 text-xs">Dismiss</button>
+        </div>
+      )}
 
       {/* Upload Modal */}
       {showUpload && (
