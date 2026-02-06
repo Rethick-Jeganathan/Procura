@@ -122,7 +122,18 @@ const SubmissionsQueue: React.FC = () => {
             <p className="text-sm text-gray-500 mt-1">{submissions.length} active submissions</p>
           </div>
           <div className="flex items-center gap-2">
-            <button className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all">
+            <button
+              onClick={() => {
+                const blob = new Blob([JSON.stringify(filteredSubmissions, null, 2)], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `submissions_${new Date().toISOString().slice(0, 10)}.json`;
+                link.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="flex items-center gap-2 px-3 py-2 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-50 transition-all"
+            >
               <Download size={16} />
               Export
             </button>

@@ -14,6 +14,7 @@ from ..dependencies import get_current_user, require_role, get_request_supabase
 from ..database import db
 from ..config import settings
 from ..api_keys import get_api_key
+from ..models import BaseResponse, UserRole
 from ..scrapers.govcon_api import GovConAPIConnector
 from ..scrapers.sam_gov import SAMGovConnector
 
@@ -62,6 +63,10 @@ class AlertRuleCreate(BaseModel):
     action: str  # email, webhook, in_app
     recipients: List[str]
     enabled: bool = True
+
+
+class RoleUpdate(BaseModel):
+    role: UserRole
 
 
 # ============================================
@@ -609,3 +614,126 @@ async def export_audit_logs(
     """Export all audit logs"""
     logs = await db.get_audit_logs(limit=10000)
     return {"data": logs, "count": len(logs), "format": format}
+
+
+# ============================================
+# User Management
+# ============================================
+
+@router.get("/users")
+async def list_users(
+    role: Optional[str] = None,
+    search: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    limit: int = Query(50, ge=1, le=100),
+    supabase: Client = Depends(get_request_supabase),
+    user: dict = Depends(require_role(["admin"]))
+):
+    """List all users from the profiles table"""
+    try:
+        offset = (page - 1) * limit
+
+        query = supabase.table("profiles").select("*", count="exact")
+
+        if role:
+            query = query.eq("role", role)
+        if search:
+            query = query.or_(f"email.ilike.%{search}%,full_name.ilike.%{search}%")
+
+        query = query.order("created_at", desc=True).range(offset, offset + limit - 1)
+
+        response = query.execute()
+
+        return {
+            "success": True,
+            "data": response.data,
+            "total": response.count or len(response.data),
+            "page": page,
+            "limit": limit,
+        }
+    except Exception as e:
+        logger.error("Failed to list users", error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to fetch users")
+
+
+@router.patch("/users/{user_id}/role", response_model=BaseResponse)
+async def update_user_role(
+    user_id: str,
+    update: RoleUpdate,
+    supabase: Client = Depends(get_request_supabase),
+    user: dict = Depends(require_role(["admin"]))
+):
+    """Update a user's role"""
+    try:
+        # Prevent admin from changing their own role
+        if user_id == user.get("id"):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot change your own role"
+            )
+
+        # Verify user exists
+        existing = supabase.table("profiles").select("id, email").eq("id", user_id).execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        # Update role
+        supabase.table("profiles").update({
+            "role": update.role.value,
+        }).eq("id", user_id).execute()
+
+        logger.info(
+            "User role updated",
+            target_user_id=user_id,
+            new_role=update.role.value,
+            by=user.get("email"),
+        )
+
+        return BaseResponse(success=True, message=f"Role updated to {update.role.value}")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to update user role", user_id=user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to update user role")
+
+
+@router.delete("/users/{user_id}", response_model=BaseResponse)
+async def delete_user(
+    user_id: str,
+    supabase: Client = Depends(get_request_supabase),
+    user: dict = Depends(require_role(["admin"]))
+):
+    """Delete a user profile"""
+    try:
+        # Prevent admin from deleting themselves
+        if user_id == user.get("id"):
+            raise HTTPException(
+                status_code=400,
+                detail="Cannot delete your own account"
+            )
+
+        # Verify user exists
+        existing = supabase.table("profiles").select("id, email").eq("id", user_id).execute()
+        if not existing.data:
+            raise HTTPException(status_code=404, detail="User not found")
+
+        target_email = existing.data[0].get("email")
+
+        # Delete from profiles table
+        supabase.table("profiles").delete().eq("id", user_id).execute()
+
+        logger.info(
+            "User deleted",
+            target_user_id=user_id,
+            target_email=target_email,
+            by=user.get("email"),
+        )
+
+        return BaseResponse(success=True, message=f"User {target_email} deleted")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("Failed to delete user", user_id=user_id, error=str(e))
+        raise HTTPException(status_code=500, detail="Failed to delete user")

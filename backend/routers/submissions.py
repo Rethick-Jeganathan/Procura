@@ -2,8 +2,11 @@
 Submissions Router
 CRUD operations for proposal submissions and workflow management
 """
+import os
+import uuid
+from pathlib import Path
 from typing import Optional
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, UploadFile, File, status
 from supabase import Client
 import structlog
 
@@ -396,7 +399,7 @@ async def update_task(
         }).eq("id", task_id).execute()
         
         return BaseResponse(success=True, message="Task updated")
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -404,4 +407,132 @@ async def update_task(
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail="Failed to update task"
+        )
+
+
+UPLOAD_DIR = Path(__file__).resolve().parent.parent.parent / "uploads"
+
+
+@router.post("/{submission_id}/files", status_code=status.HTTP_201_CREATED)
+async def upload_submission_file(
+    submission_id: str,
+    file: UploadFile = File(...),
+    supabase: Client = Depends(get_request_supabase),
+    user: dict = Depends(require_officer),
+):
+    """
+    Upload a file to a submission.
+
+    Accepts multipart/form-data with a ``file`` field.  The file is stored in
+    Supabase Storage (bucket ``submission-files``) when available, and falls
+    back to a local ``uploads/`` directory otherwise.  A record is always
+    created in the ``submission_files`` table.
+    """
+    try:
+        # Verify the submission exists and the user has access
+        submission = (
+            supabase.table("submissions")
+            .select("id, owner_id")
+            .eq("id", submission_id)
+            .single()
+            .execute()
+        )
+        if not submission.data:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail="Submission not found",
+            )
+
+        if (
+            user.get("role") != "admin"
+            and submission.data["owner_id"] != user["id"]
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Not authorized to upload files to this submission",
+            )
+
+        # Read file content
+        file_content = await file.read()
+        file_size = len(file_content)
+        file_name = file.filename or "untitled"
+        file_type = file.content_type or "application/octet-stream"
+
+        # Unique key so filenames never collide
+        unique_id = uuid.uuid4().hex
+        storage_key = f"{submission_id}/{unique_id}_{file_name}"
+
+        # Try Supabase Storage first, fall back to local disk
+        storage_path: str
+        try:
+            supabase.storage.from_("submission-files").upload(
+                path=storage_key,
+                file=file_content,
+                file_options={"content-type": file_type},
+            )
+            storage_path = f"submission-files/{storage_key}"
+            logger.info(
+                "File uploaded to Supabase Storage",
+                submission_id=submission_id,
+                path=storage_path,
+            )
+        except Exception as storage_err:
+            logger.warning(
+                "Supabase Storage unavailable, falling back to local disk",
+                error=str(storage_err)[:200],
+            )
+            # Ensure the local uploads directory exists
+            local_dir = UPLOAD_DIR / submission_id
+            local_dir.mkdir(parents=True, exist_ok=True)
+
+            local_path = local_dir / f"{unique_id}_{file_name}"
+            local_path.write_bytes(file_content)
+            storage_path = str(local_path)
+            logger.info(
+                "File saved to local disk",
+                submission_id=submission_id,
+                path=storage_path,
+            )
+
+        # Create the record in submission_files
+        record_data = {
+            "submission_id": submission_id,
+            "file_name": file_name,
+            "file_size": file_size,
+            "file_type": file_type,
+            "storage_path": storage_path,
+            "scan_status": "pending",
+            "uploaded_by": user["id"],
+        }
+
+        result = (
+            supabase.table("submission_files").insert(record_data).execute()
+        )
+
+        if not result.data:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Failed to create file record",
+            )
+
+        logger.info(
+            "Submission file record created",
+            submission_id=submission_id,
+            file_id=result.data[0].get("id"),
+            file_name=file_name,
+        )
+
+        return result.data[0]
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(
+            "Failed to upload file",
+            submission_id=submission_id,
+            error=str(e),
+        )
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to upload file",
         )

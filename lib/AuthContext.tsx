@@ -96,8 +96,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                     api.clearToken();
                 }
 
-                // Skip MFA check for now
-                // await checkMFAStatus(session?.user ?? null);
+                await checkMFAStatus(session?.user ?? null);
             } catch (error) {
                 console.error('Failed to initialize auth session:', error);
             } finally {
@@ -180,11 +179,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 setUser(data.user);
                 api.setToken(data.session.access_token);
 
-                // Skip MFA for now
-                // const { data: factors } = await supabase.auth.mfa.listFactors();
-                // if (factors?.totp?.some(f => f.status === 'verified')) {
-                //     setNeedsMFAVerification(true);
-                // }
+                const { data: factors } = await supabase.auth.mfa.listFactors();
+                if (factors?.totp?.some(f => f.status === 'verified')) {
+                    setNeedsMFAVerification(true);
+                }
             }
 
             return { error };
