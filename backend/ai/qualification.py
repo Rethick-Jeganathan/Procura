@@ -6,7 +6,7 @@ from typing import Dict, Optional
 from datetime import datetime, date
 import structlog
 
-from .llm_client import LLMClient
+from .llm_client import LLMClient, get_llm_client
 from ..database import get_supabase_client
 
 logger = structlog.get_logger()
@@ -100,7 +100,7 @@ async def qualify_opportunity(opportunity: Dict, force_refresh: bool = False) ->
     )
     
     try:
-        llm = LLMClient()
+        llm = get_llm_client()
         result = await llm.analyze_json(prompt)
         
         # Validate scores are in range

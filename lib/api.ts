@@ -358,6 +358,48 @@ class ProcuraAPI {
         return this.request<any>('DELETE', `/admin/users/${id}`);
     }
 
+    // ============================================
+    // Settings
+    // ============================================
+
+    async getAPIKeys() {
+        return this.request<any>('GET', '/settings/api-keys');
+    }
+
+    async updateAPIKey(keyName: string, value: string) {
+        return this.request<any>('PUT', `/settings/api-keys/${keyName}`, { value });
+    }
+
+    async bulkUpdateAPIKeys(keys: Record<string, string>) {
+        return this.request<any>('PUT', '/settings/api-keys', { keys });
+    }
+
+    async deleteAPIKey(keyName: string) {
+        return this.request<any>('DELETE', `/settings/api-keys/${keyName}`);
+    }
+
+    async testAPIKey(keyName: string) {
+        return this.request<any>('POST', `/settings/api-keys/${keyName}/test`);
+    }
+
+    async getGeneralSettings() {
+        return this.request<any>('GET', '/settings/general');
+    }
+
+    async updateGeneralSettings(data: {
+        llm_provider?: string;
+        llm_model?: string;
+        llm_temperature?: number;
+        llm_max_tokens?: number;
+        openmanus_url?: string;
+    }) {
+        return this.request<any>('PUT', '/settings/general', data);
+    }
+
+    async reloadSettings() {
+        return this.request<any>('POST', '/settings/reload');
+    }
+
     async approveSubmission(id: string, step: string, notes?: string) {
         const query = new URLSearchParams();
         query.set('step', step);

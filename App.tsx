@@ -10,6 +10,7 @@ import AuditVault from './pages/AuditVault';
 import SubmissionWorkspace from './pages/SubmissionWorkspace';
 import AccessDenied from './pages/AccessDenied';
 import AdminDashboard from './pages/AdminDashboard';
+import Settings from './pages/Settings';
 
 // Protected Route wrapper
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
@@ -43,6 +44,7 @@ const AppLayout: React.FC = () => {
         <Route path="/audit" element={<AuditVault />} />
         <Route path="/workspace" element={<SubmissionWorkspace />} />
         <Route path="/workspace/:submissionId" element={<SubmissionWorkspace />} />
+        <Route path="/settings" element={<Settings />} />
         <Route path="/access-denied" element={<AccessDenied />} />
       </Routes>
     </div>

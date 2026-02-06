@@ -317,18 +317,40 @@ async def finalize_submission(
         run_id = run.data[0]["id"]
         
         if not dry_run:
-            # TODO: Trigger OpenManus task
-            # from ..automation.submission_engine import execute_submission
-            # await execute_submission(submission_id, run_id)
-            pass
-        
+            try:
+                from ..automation.submission_engine import execute_submission
+                result = await execute_submission(submission_id, run_id, dry_run=False)
+                return SubmissionExecuteResponse(
+                    success=True,
+                    run_id=run_id,
+                    status="success" if result.get("success") else "failed",
+                    receipt_id=result.get("receipt_id"),
+                    screenshots=result.get("screenshots"),
+                    message="Submission completed" if result.get("success") else "Submission failed",
+                    error=result.get("error"),
+                )
+            except Exception as exec_err:
+                logger.error("Submission execution failed", id=submission_id, error=str(exec_err))
+                # Update run as failed but don't crash the endpoint
+                supabase.table("submission_runs").update({
+                    "status": "failed",
+                    "error_message": str(exec_err)[:500],
+                }).eq("id", run_id).execute()
+                return SubmissionExecuteResponse(
+                    success=False,
+                    run_id=run_id,
+                    status="failed",
+                    message="Submission execution failed",
+                    error=str(exec_err)[:500],
+                )
+
         logger.info("Submission finalized", id=submission_id, run_id=run_id, dry_run=dry_run)
-        
+
         return SubmissionExecuteResponse(
             success=True,
             run_id=run_id,
             status="pending",
-            message="Submission execution initiated" if not dry_run else "Dry run completed"
+            message="Dry run completed"
         )
         
     except HTTPException:

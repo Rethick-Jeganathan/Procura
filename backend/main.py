@@ -9,8 +9,9 @@ from fastapi.exceptions import RequestValidationError
 import structlog
 import uvicorn
 
-from .config import settings
+from .config import settings as app_settings
 from .routers import opportunities, submissions, connectors, audit, admin, feeds
+from .routers import settings as settings_router
 # from .tasks.celery_app import celery_app  # Uncomment when Celery is configured
 
 logger = structlog.get_logger()
@@ -22,7 +23,7 @@ async def lifespan(app: FastAPI):
     Application lifespan events - startup and shutdown
     """
     # Startup
-    logger.info("Starting Procura API", environment=settings.ENVIRONMENT)
+    logger.info("Starting Procura API", environment=app_settings.ENVIRONMENT)
     
     # Initialize Celery beat schedule (uncomment when ready)
     # celery_app.conf.beat_schedule = {
@@ -44,8 +45,8 @@ app = FastAPI(
     title="Procura Ops API",
     description="Government Contract Opportunity Automation Platform",
     version="1.0.0",
-    docs_url="/docs" if settings.DEBUG else None,
-    redoc_url="/redoc" if settings.DEBUG else None,
+    docs_url="/docs" if app_settings.DEBUG else None,
+    redoc_url="/redoc" if app_settings.DEBUG else None,
     lifespan=lifespan
 )
 
@@ -56,7 +57,7 @@ app = FastAPI(
 # CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=settings.allowed_origins,
+    allow_origins=app_settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -118,7 +119,7 @@ async def global_exception_handler(request: Request, exc: Exception):
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
         content={
             "success": False,
-            "message": "Internal server error" if settings.is_production else str(exc)
+            "message": "Internal server error" if app_settings.is_production else str(exc)
         }
     )
 
@@ -163,6 +164,12 @@ app.include_router(
     tags=["Feeds"]
 )
 
+app.include_router(
+    settings_router.router,
+    prefix="/api/settings",
+    tags=["Settings"]
+)
+
 
 # ===========================================
 # ROOT ENDPOINTS
@@ -175,7 +182,7 @@ async def root():
         "name": "Procura Ops API",
         "version": "1.0.0",
         "status": "healthy",
-        "environment": settings.ENVIRONMENT
+        "environment": app_settings.ENVIRONMENT
     }
 
 
@@ -187,7 +194,7 @@ async def health_check():
     health_status = {
         "status": "healthy",
         "checks": {},
-        "environment": settings.ENVIRONMENT
+        "environment": app_settings.ENVIRONMENT
     }
 
     # Check Supabase connection
@@ -200,10 +207,10 @@ async def health_check():
         health_status["status"] = "degraded"
 
     # Check Redis (only if configured for Celery)
-    if settings.REDIS_URL and not settings.REDIS_URL.startswith("redis://localhost"):
+    if app_settings.REDIS_URL and not app_settings.REDIS_URL.startswith("redis://localhost"):
         try:
             import redis
-            r = redis.from_url(settings.REDIS_URL, socket_timeout=2)
+            r = redis.from_url(app_settings.REDIS_URL, socket_timeout=2)
             r.ping()
             health_status["checks"]["redis"] = "connected"
         except Exception as e:
@@ -224,5 +231,5 @@ if __name__ == "__main__":
         "backend.main:app",
         host="0.0.0.0",
         port=int(os.getenv("PORT", 8001)),
-        reload=settings.DEBUG
+        reload=app_settings.DEBUG
     )

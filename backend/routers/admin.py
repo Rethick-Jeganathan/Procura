@@ -13,6 +13,7 @@ import structlog
 from ..dependencies import get_current_user, require_role, get_request_supabase
 from ..database import db
 from ..config import settings
+from ..api_keys import get_api_key
 from ..scrapers.govcon_api import GovConAPIConnector
 from ..scrapers.sam_gov import SAMGovConnector
 
@@ -308,18 +309,9 @@ async def trigger_discovery(
         payload = payload or {}
         requested_source = (payload.get("source") or source or "all").strip().lower()
 
-        def _is_placeholder(value: Optional[str]) -> bool:
-            if not value:
-                return True
-            v = value.strip()
-            if not v:
-                return True
-            upper = v.upper()
-            return upper == "PLACEHOLDER" or "PLACEHOLDER" in upper or v.startswith("your-")
-
-        connectors: dict[str, tuple[type, Optional[str]]] = {
-            "govcon": (GovConAPIConnector, settings.GOVCON_API_KEY),
-            "sam": (SAMGovConnector, settings.SAM_GOV_API_KEY),
+        connectors: dict[str, tuple[type, str]] = {
+            "govcon": (GovConAPIConnector, "GOVCON_API_KEY"),
+            "sam": (SAMGovConnector, "SAM_GOV_API_KEY"),
         }
 
         if requested_source != "all" and requested_source not in connectors:
@@ -328,11 +320,11 @@ async def trigger_discovery(
         connector_names = (
             [requested_source]
             if requested_source != "all"
-            else [name for name, (_, key) in connectors.items() if not _is_placeholder(key)]
+            else [name for name, (_, key_name) in connectors.items() if get_api_key(key_name)]
         )
 
         if not connector_names:
-            raise HTTPException(status_code=400, detail="No discovery connectors are configured")
+            raise HTTPException(status_code=400, detail="No discovery connectors are configured. Add API keys in Settings.")
 
         since_days = int(payload.get("since_days") or 7)
         since = datetime.utcnow() - timedelta(days=max(1, since_days))
@@ -341,8 +333,9 @@ async def trigger_discovery(
         results: dict[str, Any] = {}
 
         for name in connector_names:
-            connector_class, api_key = connectors[name]
-            if _is_placeholder(api_key):
+            connector_class, key_name = connectors[name]
+            api_key = get_api_key(key_name)
+            if not api_key:
                 results[name] = {"success": False, "error": "missing api key"}
                 continue
 
@@ -437,17 +430,17 @@ async def test_ai_connection(
 ):
     """Test AI connection"""
     try:
-        from ..ai.llm_client import LLMClient
-        
-        client = LLMClient()
+        from ..ai.llm_client import get_llm_client
+
+        client = get_llm_client()
         test_prompt = "Respond with only the word 'connected' to confirm the connection is working."
-        
+
         response = await client.complete(test_prompt)
-        
+
         return {
             "success": True,
-            "provider": settings.PROCURA_LLM_PROVIDER,
-            "model": settings.LLM_MODEL,
+            "provider": client.provider,
+            "model": client.model,
             "response_preview": response[:100] if response else None
         }
     except Exception as e:

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { NavLink } from 'react-router-dom';
-import { LayoutDashboard, FileText, ShieldAlert, Lock, Briefcase, Gem, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
+import { LayoutDashboard, FileText, ShieldAlert, Lock, Briefcase, Gem, ChevronLeft, ChevronRight, LogOut, Settings } from 'lucide-react';
 
 const Sidebar = () => {
   const [isCollapsed, setIsCollapsed] = useState(false);
@@ -54,6 +54,10 @@ const Sidebar = () => {
         <NavLink to="/audit" className={navItemClass} title="Audit trail and compliance logs">
           <Lock size={20} className="shrink-0" />
           <span className={`text-sm font-medium whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100 block'}`}>Audit Logs</span>
+        </NavLink>
+        <NavLink to="/settings" className={navItemClass} title="API keys and system settings">
+          <Settings size={20} className="shrink-0" />
+          <span className={`text-sm font-medium whitespace-nowrap transition-all duration-300 ${isCollapsed ? 'w-0 opacity-0 hidden' : 'w-auto opacity-100 block'}`}>Settings</span>
         </NavLink>
       </div>
 
