@@ -6,7 +6,7 @@ import {
     TrendingUp, TrendingDown, Minus, CheckCircle, XCircle, Clock,
     Zap, RefreshCw, Download, Upload, Loader2, ChevronRight,
     ToggleLeft, ToggleRight, Play, Pause, Trash2, Edit2, Plus,
-    AlertTriangle, Info, Gem, LogOut, Moon, Sun, ExternalLink
+    AlertTriangle, Info, Gem, LogOut, Moon, Sun, ExternalLink, X
 } from 'lucide-react';
 import { api } from '../lib/api';
 
@@ -74,6 +74,18 @@ const AdminDashboard: React.FC = () => {
     const [users, setUsers] = useState<User[]>([]);
     const [aiConfig, setAiConfig] = useState<AIConfig | null>(null);
     const [discoveryConfig, setDiscoveryConfig] = useState<DiscoveryConfig | null>(null);
+
+    // User management states
+    const [userSearch, setUserSearch] = useState('');
+    const [showInviteModal, setShowInviteModal] = useState(false);
+    const [inviteEmail, setInviteEmail] = useState('');
+    const [inviteRole, setInviteRole] = useState('viewer');
+    const [inviteLoading, setInviteLoading] = useState(false);
+    const [actionDropdownUserId, setActionDropdownUserId] = useState<string | null>(null);
+    const [showRoleChangeModal, setShowRoleChangeModal] = useState(false);
+    const [roleChangeUser, setRoleChangeUser] = useState<User | null>(null);
+    const [roleChangeValue, setRoleChangeValue] = useState('');
+    const [actionLoading, setActionLoading] = useState(false);
 
     // Load metrics
     useEffect(() => {
@@ -194,6 +206,89 @@ const AdminDashboard: React.FC = () => {
         } finally {
             setAiLoading(false);
         }
+    };
+
+    // Filtered users based on search
+    const filteredUsers = users.filter(user => {
+        if (!userSearch.trim()) return true;
+        const query = userSearch.toLowerCase();
+        return (
+            user.name?.toLowerCase().includes(query) ||
+            user.email?.toLowerCase().includes(query) ||
+            user.role?.toLowerCase().includes(query)
+        );
+    });
+
+    // Invite user handler
+    const handleInviteUser = async () => {
+        if (!inviteEmail.trim()) return;
+        setInviteLoading(true);
+        setError(null);
+        try {
+            const response = await api.inviteUser(inviteEmail.trim(), inviteRole);
+            if (response.error) {
+                setError(response.error);
+            } else {
+                setShowInviteModal(false);
+                setInviteEmail('');
+                setInviteRole('viewer');
+                await loadUsers();
+            }
+        } catch (err) {
+            setError('Failed to invite user');
+        } finally {
+            setInviteLoading(false);
+        }
+    };
+
+    // Change user role handler
+    const handleChangeRole = async () => {
+        if (!roleChangeUser || !roleChangeValue) return;
+        setActionLoading(true);
+        setError(null);
+        try {
+            const response = await api.updateUser(roleChangeUser.id, { role: roleChangeValue });
+            if (response.error) {
+                setError(response.error);
+            } else {
+                setShowRoleChangeModal(false);
+                setRoleChangeUser(null);
+                setRoleChangeValue('');
+                await loadUsers();
+            }
+        } catch (err) {
+            setError('Failed to update user role');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // Delete user handler
+    const handleDeleteUser = async (userId: string) => {
+        if (!confirm('Are you sure you want to delete this user? This action cannot be undone.')) return;
+        setActionLoading(true);
+        setActionDropdownUserId(null);
+        setError(null);
+        try {
+            const response = await api.deleteUser(userId);
+            if (response.error) {
+                setError(response.error);
+            } else {
+                await loadUsers();
+            }
+        } catch (err) {
+            setError('Failed to delete user');
+        } finally {
+            setActionLoading(false);
+        }
+    };
+
+    // Open role change modal for a user
+    const openRoleChangeModal = (user: User) => {
+        setRoleChangeUser(user);
+        setRoleChangeValue(user.role);
+        setShowRoleChangeModal(true);
+        setActionDropdownUserId(null);
     };
 
     const navItems = [
@@ -390,11 +485,16 @@ const AdminDashboard: React.FC = () => {
                                     <input
                                         type="text"
                                         placeholder="Search users..."
+                                        value={userSearch}
+                                        onChange={(e) => setUserSearch(e.target.value)}
                                         className={`pl-9 pr-4 py-2 border rounded-lg text-sm w-64 ${darkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-white border-gray-200'
                                             }`}
                                     />
                                 </div>
-                                <button className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-all">
+                                <button
+                                    onClick={() => setShowInviteModal(true)}
+                                    className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-all"
+                                >
                                     <Plus size={16} />
                                     Invite User
                                 </button>
@@ -404,10 +504,12 @@ const AdminDashboard: React.FC = () => {
                                 <div className="flex items-center justify-center py-12">
                                     <Loader2 size={32} className="animate-spin text-gray-400" />
                                 </div>
-                            ) : users.length === 0 ? (
+                            ) : filteredUsers.length === 0 ? (
                                 <div className={`p-8 rounded-xl border text-center ${darkMode ? 'bg-[#111] border-neutral-800' : 'bg-white border-gray-100'}`}>
                                     <Users size={32} className="mx-auto mb-3 text-gray-400" />
-                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>No users found</p>
+                                    <p className={`text-sm ${darkMode ? 'text-gray-400' : 'text-gray-500'}`}>
+                                        {userSearch.trim() ? 'No users match your search' : 'No users found'}
+                                    </p>
                                 </div>
                             ) : (
                                 <div className={`rounded-xl border overflow-hidden ${darkMode ? 'bg-[#111] border-neutral-800' : 'bg-white border-gray-100'}`}>
@@ -422,7 +524,7 @@ const AdminDashboard: React.FC = () => {
                                             </tr>
                                         </thead>
                                         <tbody className={`divide-y ${darkMode ? 'divide-neutral-800' : 'divide-gray-100'}`}>
-                                            {users.map(user => (
+                                            {filteredUsers.map(user => (
                                                 <tr key={user.id} className={`transition-colors ${darkMode ? 'hover:bg-neutral-800/30' : 'hover:bg-gray-50'}`}>
                                                     <td className="px-6 py-4">
                                                         <div className="flex items-center gap-3">
@@ -447,9 +549,32 @@ const AdminDashboard: React.FC = () => {
                                                         <span className="text-sm text-gray-500">{user.lastLogin || 'Never'}</span>
                                                     </td>
                                                     <td className="px-6 py-4">
-                                                        <button className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-neutral-700' : 'hover:bg-gray-100'}`}>
-                                                            <MoreHorizontal size={16} className="text-gray-400" />
-                                                        </button>
+                                                        <div className="relative">
+                                                            <button
+                                                                onClick={() => setActionDropdownUserId(actionDropdownUserId === user.id ? null : user.id)}
+                                                                className={`p-1.5 rounded-lg ${darkMode ? 'hover:bg-neutral-700' : 'hover:bg-gray-100'}`}
+                                                            >
+                                                                <MoreHorizontal size={16} className="text-gray-400" />
+                                                            </button>
+                                                            {actionDropdownUserId === user.id && (
+                                                                <div className={`absolute right-0 top-full mt-1 w-48 rounded-lg border shadow-lg z-10 py-1 ${darkMode ? 'bg-neutral-800 border-neutral-700' : 'bg-white border-gray-200'}`}>
+                                                                    <button
+                                                                        onClick={() => openRoleChangeModal(user)}
+                                                                        className={`w-full flex items-center gap-2 px-4 py-2 text-sm text-left transition-colors ${darkMode ? 'text-gray-300 hover:bg-neutral-700' : 'text-gray-700 hover:bg-gray-50'}`}
+                                                                    >
+                                                                        <Edit2 size={14} />
+                                                                        Change Role
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteUser(user.id)}
+                                                                        className="w-full flex items-center gap-2 px-4 py-2 text-sm text-left text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                                                                    >
+                                                                        <Trash2 size={14} />
+                                                                        Delete User
+                                                                    </button>
+                                                                </div>
+                                                            )}
+                                                        </div>
                                                     </td>
                                                 </tr>
                                             ))}
@@ -729,6 +854,121 @@ const AdminDashboard: React.FC = () => {
                     )}
                 </div>
             </div>
+
+            {/* Invite User Modal */}
+            {showInviteModal && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/50" onClick={() => setShowInviteModal(false)} />
+                    <div className={`relative w-full max-w-md mx-4 rounded-xl border shadow-2xl ${darkMode ? 'bg-[#111] border-neutral-800' : 'bg-white border-gray-200'}`}>
+                        <div className={`flex items-center justify-between px-6 py-4 border-b ${darkMode ? 'border-neutral-800' : 'border-gray-100'}`}>
+                            <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Invite User</h3>
+                            <button
+                                onClick={() => setShowInviteModal(false)}
+                                className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-neutral-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="px-6 py-5 space-y-4">
+                            <div>
+                                <label className={`block text-sm font-medium mb-1.5 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Email Address</label>
+                                <input
+                                    type="email"
+                                    value={inviteEmail}
+                                    onChange={(e) => setInviteEmail(e.target.value)}
+                                    placeholder="user@example.com"
+                                    className={`w-full px-3 py-2 border rounded-lg text-sm ${darkMode ? 'bg-neutral-800 border-neutral-700 text-white placeholder-gray-500' : 'bg-white border-gray-200 placeholder-gray-400'}`}
+                                />
+                            </div>
+                            <div>
+                                <label className={`block text-sm font-medium mb-1.5 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>Role</label>
+                                <select
+                                    value={inviteRole}
+                                    onChange={(e) => setInviteRole(e.target.value)}
+                                    className={`w-full px-3 py-2 border rounded-lg text-sm ${darkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-white border-gray-200'}`}
+                                >
+                                    <option value="viewer">Viewer</option>
+                                    <option value="contract_officer">Contract Officer</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className={`flex items-center justify-end gap-3 px-6 py-4 border-t ${darkMode ? 'border-neutral-800' : 'border-gray-100'}`}>
+                            <button
+                                onClick={() => setShowInviteModal(false)}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${darkMode ? 'text-gray-300 hover:bg-neutral-800' : 'text-gray-700 hover:bg-gray-100'}`}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleInviteUser}
+                                disabled={inviteLoading || !inviteEmail.trim()}
+                                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {inviteLoading && <Loader2 size={14} className="animate-spin" />}
+                                {inviteLoading ? 'Sending...' : 'Send Invite'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Change Role Modal */}
+            {showRoleChangeModal && roleChangeUser && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center">
+                    <div className="absolute inset-0 bg-black/50" onClick={() => { setShowRoleChangeModal(false); setRoleChangeUser(null); }} />
+                    <div className={`relative w-full max-w-md mx-4 rounded-xl border shadow-2xl ${darkMode ? 'bg-[#111] border-neutral-800' : 'bg-white border-gray-200'}`}>
+                        <div className={`flex items-center justify-between px-6 py-4 border-b ${darkMode ? 'border-neutral-800' : 'border-gray-100'}`}>
+                            <h3 className={`text-lg font-semibold ${darkMode ? 'text-white' : 'text-gray-900'}`}>Change Role</h3>
+                            <button
+                                onClick={() => { setShowRoleChangeModal(false); setRoleChangeUser(null); }}
+                                className={`p-1.5 rounded-lg transition-colors ${darkMode ? 'hover:bg-neutral-800 text-gray-400' : 'hover:bg-gray-100 text-gray-500'}`}
+                            >
+                                <X size={18} />
+                            </button>
+                        </div>
+                        <div className="px-6 py-5 space-y-4">
+                            <div className={`p-3 rounded-lg ${darkMode ? 'bg-neutral-800/50' : 'bg-gray-50'}`}>
+                                <p className={`text-sm font-medium ${darkMode ? 'text-white' : 'text-gray-900'}`}>{roleChangeUser.name}</p>
+                                <p className="text-xs text-gray-500">{roleChangeUser.email}</p>
+                            </div>
+                            <div>
+                                <label className={`block text-sm font-medium mb-1.5 ${darkMode ? 'text-gray-300' : 'text-gray-700'}`}>New Role</label>
+                                <select
+                                    value={roleChangeValue}
+                                    onChange={(e) => setRoleChangeValue(e.target.value)}
+                                    className={`w-full px-3 py-2 border rounded-lg text-sm ${darkMode ? 'bg-neutral-800 border-neutral-700 text-white' : 'bg-white border-gray-200'}`}
+                                >
+                                    <option value="viewer">Viewer</option>
+                                    <option value="contract_officer">Contract Officer</option>
+                                    <option value="admin">Admin</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div className={`flex items-center justify-end gap-3 px-6 py-4 border-t ${darkMode ? 'border-neutral-800' : 'border-gray-100'}`}>
+                            <button
+                                onClick={() => { setShowRoleChangeModal(false); setRoleChangeUser(null); }}
+                                className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${darkMode ? 'text-gray-300 hover:bg-neutral-800' : 'text-gray-700 hover:bg-gray-100'}`}
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handleChangeRole}
+                                disabled={actionLoading || roleChangeValue === roleChangeUser.role}
+                                className="flex items-center gap-2 px-4 py-2 bg-gray-900 text-white rounded-lg text-sm font-medium hover:bg-gray-800 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                            >
+                                {actionLoading && <Loader2 size={14} className="animate-spin" />}
+                                {actionLoading ? 'Updating...' : 'Update Role'}
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Click-away listener for action dropdown */}
+            {actionDropdownUserId && (
+                <div className="fixed inset-0 z-0" onClick={() => setActionDropdownUserId(null)} />
+            )}
         </div>
     );
 };

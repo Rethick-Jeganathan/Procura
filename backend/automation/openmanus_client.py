@@ -22,8 +22,10 @@ from ..config import settings
 
 logger = structlog.get_logger()
 
-# Directory for storing screenshots / evidence captured during automation runs
-EVIDENCE_DIR = Path(os.getenv("PROCURA_EVIDENCE_DIR", "/tmp/procura_evidence"))
+# Directory for storing screenshots / evidence captured during automation runs.
+# Defaults to a persistent project-level directory; override via PROCURA_EVIDENCE_DIR.
+_DEFAULT_EVIDENCE = Path(__file__).resolve().parent.parent.parent / "data" / "evidence"
+EVIDENCE_DIR = Path(os.getenv("PROCURA_EVIDENCE_DIR", str(_DEFAULT_EVIDENCE)))
 EVIDENCE_DIR.mkdir(parents=True, exist_ok=True)
 
 

@@ -22,6 +22,10 @@ class ProcuraAPI {
         this.token = null;
     }
 
+    getToken(): string | null {
+        return this.token;
+    }
+
     private async request<T>(
         method: string,
         endpoint: string,

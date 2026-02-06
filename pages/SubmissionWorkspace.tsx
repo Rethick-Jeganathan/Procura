@@ -56,6 +56,7 @@ const SubmissionWorkspace: React.FC = () => {
   const [isUploading, setIsUploading] = useState(false);
   const [isCheckingCompliance, setIsCheckingCompliance] = useState(false);
   const [complianceResult, setComplianceResult] = useState<any>(null);
+  const [approvingStep, setApprovingStep] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const loadSubmission = async () => {
@@ -138,7 +139,7 @@ const SubmissionWorkspace: React.FC = () => {
         formData.append('file', files[i]);
 
         const headers: Record<string, string> = {};
-        const token = localStorage.getItem('supabase_token');
+        const token = api.getToken();
         if (token) {
           headers['Authorization'] = `Bearer ${token}`;
         }
@@ -192,7 +193,7 @@ const SubmissionWorkspace: React.FC = () => {
 
   type ApprovalStepStatus = 'pending' | 'approved' | 'rejected' | 'locked';
 
-  const getApprovalSteps = useCallback((): { label: string; icon: React.ReactNode; status: ApprovalStepStatus }[] => {
+  const getApprovalSteps = useCallback((): { label: string; stepName: string; icon: React.ReactNode; status: ApprovalStepStatus }[] => {
     const approvalStatus = submission?.approval_status || 'pending';
 
     const isRejected = approvalStatus === 'rejected';
@@ -221,11 +222,51 @@ const SubmissionWorkspace: React.FC = () => {
     }
 
     return [
-      { label: 'Legal Review', icon: <Shield size={16} />, status: legalStatus },
-      { label: 'Finance Review', icon: <DollarSign size={16} />, status: financeStatus },
-      { label: 'Executive Approval', icon: <UserCheck size={16} />, status: executiveStatus },
+      { label: 'Legal Review', stepName: 'legal_review', icon: <Shield size={16} />, status: legalStatus },
+      { label: 'Finance Review', stepName: 'finance_review', icon: <DollarSign size={16} />, status: financeStatus },
+      { label: 'Executive Approval', stepName: 'executive_approval', icon: <UserCheck size={16} />, status: executiveStatus },
     ];
   }, [submission?.approval_status]);
+
+  const handleApproveStep = useCallback(async (stepName: string) => {
+    if (!submissionId) return;
+    setApprovingStep(stepName);
+    setError(null);
+    try {
+      const response = await api.approveSubmission(submissionId, stepName);
+      if (response.error) {
+        setError(response.error);
+      }
+      await loadSubmission();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Approval failed');
+    } finally {
+      setApprovingStep(null);
+    }
+  }, [submissionId]);
+
+  const handleRejectStep = useCallback(async (stepName: string) => {
+    if (!submissionId) return;
+    const reason = window.prompt(`Reason for rejecting ${stepName.replace(/_/g, ' ')}:`);
+    if (reason === null) return; // User cancelled the prompt
+    if (!reason.trim()) {
+      setError('A rejection reason is required.');
+      return;
+    }
+    setApprovingStep(stepName);
+    setError(null);
+    try {
+      const response = await api.rejectSubmission(submissionId, reason.trim());
+      if (response.error) {
+        setError(response.error);
+      }
+      await loadSubmission();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Rejection failed');
+    } finally {
+      setApprovingStep(null);
+    }
+  }, [submissionId]);
 
   const getStatusBadge = (status: string) => {
     const map: Record<string, { bg: string; text: string; label: string }> = {
@@ -350,7 +391,7 @@ const SubmissionWorkspace: React.FC = () => {
                   <ArrowRight size={16} className="text-gray-300 shrink-0" />
                 )}
                 <div
-                  className={`flex-1 flex items-center gap-2 p-3 rounded-lg border transition-all ${
+                  className={`flex-1 p-3 rounded-lg border transition-all ${
                     step.status === 'approved'
                       ? 'bg-green-50 border-green-200'
                       : step.status === 'rejected'
@@ -360,36 +401,8 @@ const SubmissionWorkspace: React.FC = () => {
                           : 'bg-gray-50 border-gray-200'
                   }`}
                 >
-                  <div className={`shrink-0 ${
-                    step.status === 'approved'
-                      ? 'text-green-600'
-                      : step.status === 'rejected'
-                        ? 'text-red-600'
-                        : step.status === 'pending'
-                          ? 'text-amber-600'
-                          : 'text-gray-400'
-                  }`}>
-                    {step.status === 'approved' ? (
-                      <CheckCircle size={18} />
-                    ) : step.status === 'rejected' ? (
-                      <XCircle size={18} />
-                    ) : (
-                      step.icon
-                    )}
-                  </div>
-                  <div className="min-w-0">
-                    <p className={`text-xs font-medium truncate ${
-                      step.status === 'approved'
-                        ? 'text-green-800'
-                        : step.status === 'rejected'
-                          ? 'text-red-800'
-                          : step.status === 'pending'
-                            ? 'text-amber-800'
-                            : 'text-gray-500'
-                    }`}>
-                      {step.label}
-                    </p>
-                    <p className={`text-xs ${
+                  <div className="flex items-center gap-2">
+                    <div className={`shrink-0 ${
                       step.status === 'approved'
                         ? 'text-green-600'
                         : step.status === 'rejected'
@@ -398,9 +411,67 @@ const SubmissionWorkspace: React.FC = () => {
                             ? 'text-amber-600'
                             : 'text-gray-400'
                     }`}>
-                      {step.status === 'approved' ? 'Approved' : step.status === 'rejected' ? 'Rejected' : step.status === 'pending' ? 'Pending' : 'Waiting'}
-                    </p>
+                      {step.status === 'approved' ? (
+                        <CheckCircle size={18} />
+                      ) : step.status === 'rejected' ? (
+                        <XCircle size={18} />
+                      ) : (
+                        step.icon
+                      )}
+                    </div>
+                    <div className="min-w-0">
+                      <p className={`text-xs font-medium truncate ${
+                        step.status === 'approved'
+                          ? 'text-green-800'
+                          : step.status === 'rejected'
+                            ? 'text-red-800'
+                            : step.status === 'pending'
+                              ? 'text-amber-800'
+                              : 'text-gray-500'
+                      }`}>
+                        {step.label}
+                      </p>
+                      <p className={`text-xs ${
+                        step.status === 'approved'
+                          ? 'text-green-600'
+                          : step.status === 'rejected'
+                            ? 'text-red-600'
+                            : step.status === 'pending'
+                              ? 'text-amber-600'
+                              : 'text-gray-400'
+                      }`}>
+                        {step.status === 'approved' ? 'Approved' : step.status === 'rejected' ? 'Rejected' : step.status === 'pending' ? 'Pending' : 'Waiting'}
+                      </p>
+                    </div>
                   </div>
+                  {step.status === 'pending' && (
+                    <div className="flex items-center gap-1.5 mt-2">
+                      <button
+                        onClick={() => handleApproveStep(step.stepName)}
+                        disabled={approvingStep !== null}
+                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-green-600 text-white rounded text-xs font-medium hover:bg-green-700 transition-all disabled:opacity-50"
+                      >
+                        {approvingStep === step.stepName ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <CheckCircle size={12} />
+                        )}
+                        Approve
+                      </button>
+                      <button
+                        onClick={() => handleRejectStep(step.stepName)}
+                        disabled={approvingStep !== null}
+                        className="flex-1 flex items-center justify-center gap-1 px-2 py-1 bg-red-600 text-white rounded text-xs font-medium hover:bg-red-700 transition-all disabled:opacity-50"
+                      >
+                        {approvingStep === step.stepName ? (
+                          <Loader2 size={12} className="animate-spin" />
+                        ) : (
+                          <XCircle size={12} />
+                        )}
+                        Reject
+                      </button>
+                    </div>
+                  )}
                 </div>
               </React.Fragment>
             ))}
