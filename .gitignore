@@ -42,3 +42,10 @@ __pycache__/
 # Uploaded files & evidence data
 uploads/
 data/
+
+# Sensitive scripts (contain credentials)
+test_supabase.py
+backend/scripts/reset_admin_password.py
+
+# Vercel
+.vercel

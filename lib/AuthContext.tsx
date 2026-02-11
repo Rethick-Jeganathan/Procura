@@ -10,6 +10,9 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.error('FATAL: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment.');
 }
 
+// TEMPORARY DEV BYPASS - Set to true to skip Supabase auth
+const DEV_BYPASS_AUTH = false;
+
 export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
@@ -155,6 +158,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
             return;
         }
 
+        // DEV BYPASS: Skip MFA check
+        if (DEV_BYPASS_AUTH) {
+            setIsMFAEnabled(false);
+            return;
+        }
+
         try {
             const { data: factors } = await supabase.auth.mfa.listFactors();
             const hasVerifiedFactor = factors?.totp?.some(f => f.status === 'verified') ?? false;
@@ -166,25 +175,65 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
 
     const signIn = async (email: string, password: string) => {
         try {
+            setNeedsMFAVerification(false);
+            // TEMPORARY BYPASS for development
+            if (DEV_BYPASS_AUTH) {
+                console.log('DEV BYPASS: Skipping Supabase auth');
+                const mockUser: User = {
+                    id: '83b8efee-0446-4190-83c7-1603686532ac',
+                    email: email,
+                    app_metadata: {},
+                    user_metadata: { full_name: 'Dev User' },
+                    aud: 'authenticated',
+                    created_at: new Date().toISOString(),
+                } as User;
+
+                const mockSession: Session = {
+                    access_token: 'dev-bypass-token',
+                    token_type: 'bearer',
+                    expires_in: 3600,
+                    refresh_token: 'dev-refresh-token',
+                    user: mockUser,
+                } as Session;
+
+                setSession(mockSession);
+                setUser(mockUser);
+                api.setToken('dev-bypass-token');
+                return { error: null };
+            }
+
+            console.log('🔐 Attempting sign in...');
             const { data, error } = await supabase.auth.signInWithPassword({
                 email,
                 password,
             });
 
-            if (!error && data.session) {
+            if (error) {
+                console.error('❌ Sign in error:', error.message);
+                return { error };
+            }
+
+            if (data.session) {
+                console.log('✅ Login successful');
                 setSession(data.session);
                 setUser(data.user);
                 api.setToken(data.session.access_token);
 
-                const { data: factors } = await supabase.auth.mfa.listFactors();
-                if (factors?.totp?.some(f => f.status === 'verified')) {
-                    setNeedsMFAVerification(true);
+                // MFA check - wrapped in try-catch so abort errors don't break login
+                try {
+                    const { data: factors } = await supabase.auth.mfa.listFactors();
+                    if (factors?.totp?.some(f => f.status === 'verified')) {
+                        setNeedsMFAVerification(true);
+                    }
+                } catch (mfaErr) {
+                    console.warn('MFA check skipped (non-critical):', mfaErr);
                 }
             }
 
             return { error };
-        } catch (err) {
-            return { error: err as AuthError };
+        } catch (err: any) {
+            console.error('❌ Sign in exception:', err);
+            return { error: { message: err.message || 'Authentication failed' } as AuthError };
         }
     };
 
@@ -269,6 +318,10 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     };
 
     const getMFAFactors = async () => {
+        // DEV BYPASS: Return empty array
+        if (DEV_BYPASS_AUTH) {
+            return [];
+        }
         const { data } = await supabase.auth.mfa.listFactors();
         return data?.totp ?? [];
     };

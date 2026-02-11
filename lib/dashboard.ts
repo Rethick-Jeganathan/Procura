@@ -95,14 +95,25 @@ export const getOpportunityCategory = (opp: OpportunityRecord) => {
 export const extractLinks = (opp: OpportunityRecord): OpportunityLinks => {
   const raw = coerceRawData(opp.raw_data);
 
-  const samUrl = raw.sam_url || raw.samUrl || raw.sam_link || raw.url || null;
+  // SAM.gov API returns `uiLink` with direct notice URLs
+  // Also check for noticeId to construct direct link
+  let samUrl: string | null =
+    raw.uiLink || raw.ui_link ||
+    raw.sam_url || raw.samUrl || raw.sam_link || raw.url || null;
+
+  // If no direct URL found but we have a noticeId, construct one
+  const nid = raw.noticeId || raw.notice_id;
+  if (!samUrl && nid) {
+    samUrl = `https://sam.gov/opp/${nid}/view`;
+  }
+
   const descriptionUrl = raw.description_url || raw.descriptionUrl || raw.additional_info_link || raw.additionalInfoLink || null;
 
   const resourcesRaw = raw.resource_links_array || raw.resourceLinks || raw.resource_links || [];
   const resourceLinks = Array.isArray(resourcesRaw)
     ? resourcesRaw
-        .map((r) => (typeof r === 'string' ? r : r?.url))
-        .filter((r) => typeof r === 'string' && r.startsWith('http'))
+      .map((r) => (typeof r === 'string' ? r : r?.url))
+      .filter((r) => typeof r === 'string' && r.startsWith('http'))
     : [];
 
   return {
@@ -153,8 +164,24 @@ export const getSamSearchUrl = (opp: OpportunityRecord) => {
   return `https://sam.gov/search/?index=opp&keywords=${encodeURIComponent(q)}`;
 };
 
+export const getSamNoticeUrl = (opp: OpportunityRecord) => {
+  // Construct direct link if possible. 
+  // SAM.gov notice IDs are often the external_ref, or we can use the solicitation number.
+  // Format: https://sam.gov/opp/[noticeId]/view
+  // However, without the internal SAM.gov ID (which is a UUID), we can't deep link reliably 
+  // EXCEPT via the search or if we store the `uiLink` from the API.
+
+  // If we have a direct URL in the raw data, use it.
+  const links = extractLinks(opp);
+  if (links.samUrl) return links.samUrl;
+
+  // Fallback to search if no direct link
+  return getSamSearchUrl(opp);
+};
+
 export const getPrimaryLink = (opp: OpportunityRecord) => {
   const links = extractLinks(opp);
+  // Prefer the direct SAM URL if invalid, otherwise search
   return links.samUrl || links.descriptionUrl || links.resourceLinks[0] || getSamSearchUrl(opp);
 };
 

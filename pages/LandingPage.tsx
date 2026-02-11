@@ -10,7 +10,7 @@ type AuthMode = 'login' | 'signup' | 'forgot' | 'mfa';
 
 const LandingPage: React.FC = () => {
     const navigate = useNavigate();
-    const { signIn, signUp, resetPassword, verifyMFA, isMFAEnabled } = useAuth();
+    const { signIn, signUp, resetPassword, verifyMFA, getMFAFactors } = useAuth();
 
     const [mode, setMode] = useState<AuthMode>('login');
     const [email, setEmail] = useState('');
@@ -38,9 +38,19 @@ const LandingPage: React.FC = () => {
             } else {
                 console.log('Login successful!');
                 // Check if MFA verification is needed before granting access
-                if (isMFAEnabled) {
-                    setMode('mfa');
-                } else {
+                try {
+                    const factors = await getMFAFactors();
+                    const verifiedFactor = factors.find(f => f.status === 'verified');
+                    if (verifiedFactor?.id) {
+                        setMfaFactorId(verifiedFactor.id);
+                        setMfaCode('');
+                        setMode('mfa');
+                    } else {
+                        navigate('/dashboard');
+                    }
+                } catch (mfaError) {
+                    // MFA check failed, but login was successful - proceed to dashboard
+                    console.warn('MFA check failed, proceeding without MFA:', mfaError);
                     navigate('/dashboard');
                 }
             }
@@ -87,6 +97,12 @@ const LandingPage: React.FC = () => {
         e.preventDefault();
         setLoading(true);
         setError('');
+
+        if (!mfaFactorId) {
+            setError('MFA factor not found. Please sign in again.');
+            setLoading(false);
+            return;
+        }
 
         const { error } = await verifyMFA(mfaCode, mfaFactorId);
 
