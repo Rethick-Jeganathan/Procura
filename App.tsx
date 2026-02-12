@@ -33,7 +33,8 @@ const ProtectedRoute: React.FC<{ children: React.ReactNode; allowedRoles?: strin
     return <Navigate to="/" replace />;
   }
 
-  // Role-based access check
+  // Role-based access check (simplified - uses user metadata)
+  // Note: For production, should verify role via backend API
   if (allowedRoles) {
     const userRole = (user as any).user_metadata?.role || 'viewer';
     if (!allowedRoles.includes(userRole)) {

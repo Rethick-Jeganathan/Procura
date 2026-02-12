@@ -1,16 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     Gem, Lock, Mail, Eye, EyeOff, Loader2,
-    CheckCircle, AlertCircle, Smartphone
+    CheckCircle, AlertCircle
 } from 'lucide-react';
 import { useAuth } from '../lib/AuthContext';
 
-type AuthMode = 'login' | 'signup' | 'forgot' | 'mfa';
+type AuthMode = 'login' | 'signup' | 'forgot';
 
 const LandingPage: React.FC = () => {
     const navigate = useNavigate();
-    const { signIn, signUp, resetPassword, verifyMFA, getMFAFactors } = useAuth();
+    const { signIn, signUp, signOut, resetPassword } = useAuth();
 
     const [mode, setMode] = useState<AuthMode>('login');
     const [email, setEmail] = useState('');
@@ -20,11 +20,48 @@ const LandingPage: React.FC = () => {
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState('');
     const [success, setSuccess] = useState('');
-    const [mfaCode, setMfaCode] = useState('');
-    const [mfaFactorId, setMfaFactorId] = useState('');
+    const [loginAttempts, setLoginAttempts] = useState(0);
+    const [loginCooldown, setLoginCooldown] = useState(0);
+
+    // Countdown timer for rate limiting
+    useEffect(() => {
+        if (loginCooldown > 0) {
+            const timer = setTimeout(() => {
+                setLoginCooldown(loginCooldown - 1);
+            }, 1000);
+            return () => clearTimeout(timer);
+        }
+    }, [loginCooldown]);
+
+    // Password complexity validation
+    const validatePassword = (password: string): string | null => {
+        if (password.length < 12) {
+            return 'Password must be at least 12 characters';
+        }
+        if (!/[a-z]/.test(password)) {
+            return 'Password must contain lowercase letters';
+        }
+        if (!/[A-Z]/.test(password)) {
+            return 'Password must contain uppercase letters';
+        }
+        if (!/[0-9]/.test(password)) {
+            return 'Password must contain numbers';
+        }
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+            return 'Password must contain special characters (!@#$%^&*(),.?":{}|<>)';
+        }
+        return null;
+    };
 
     const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
+
+        // Rate limiting check
+        if (loginCooldown > 0) {
+            setError(`Too many failed attempts. Please wait ${loginCooldown} seconds before trying again.`);
+            return;
+        }
+
         setLoading(true);
         setError('');
         console.log('Login attempt for:', email);
@@ -35,24 +72,23 @@ const LandingPage: React.FC = () => {
             if (error) {
                 console.error('Login error:', error.message);
                 setError(error.message);
-            } else {
-                console.log('Login successful!');
-                // Check if MFA verification is needed before granting access
-                try {
-                    const factors = await getMFAFactors();
-                    const verifiedFactor = factors.find(f => f.status === 'verified');
-                    if (verifiedFactor?.id) {
-                        setMfaFactorId(verifiedFactor.id);
-                        setMfaCode('');
-                        setMode('mfa');
-                    } else {
-                        navigate('/dashboard');
-                    }
-                } catch (mfaError) {
-                    // MFA check failed, but login was successful - proceed to dashboard
-                    console.warn('MFA check failed, proceeding without MFA:', mfaError);
-                    navigate('/dashboard');
+
+                // Implement exponential backoff after failed attempts
+                const newAttempts = loginAttempts + 1;
+                setLoginAttempts(newAttempts);
+
+                if (newAttempts >= 3) {
+                    // Exponential backoff: 30s, 60s, 120s, 240s (max 5 minutes)
+                    const cooldown = Math.min(30 * Math.pow(2, newAttempts - 3), 300);
+                    setLoginCooldown(cooldown);
                 }
+            } else {
+                // Reset attempts on successful login
+                setLoginAttempts(0);
+                setLoginCooldown(0);
+                console.log('Login successful!');
+                // Navigate directly to dashboard (MFA removed for simplicity)
+                navigate('/dashboard');
             }
         } catch (err) {
             console.error('Login exception:', err);
@@ -66,6 +102,14 @@ const LandingPage: React.FC = () => {
         e.preventDefault();
         setLoading(true);
         setError('');
+
+        // Validate password complexity
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+            setError(passwordError);
+            setLoading(false);
+            return;
+        }
 
         const { error } = await signUp(email, password, fullName);
 
@@ -91,27 +135,6 @@ const LandingPage: React.FC = () => {
             setSuccess('Password reset email sent!');
         }
         setLoading(false);
-    };
-
-    const handleMFAVerify = async (e: React.FormEvent) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
-
-        if (!mfaFactorId) {
-            setError('MFA factor not found. Please sign in again.');
-            setLoading(false);
-            return;
-        }
-
-        const { error } = await verifyMFA(mfaCode, mfaFactorId);
-
-        if (error) {
-            setError('Invalid code. Please try again.');
-            setLoading(false);
-        } else {
-            navigate('/dashboard');
-        }
     };
 
     // Auth Form
@@ -154,13 +177,11 @@ const LandingPage: React.FC = () => {
                             {mode === 'login' && 'Welcome back'}
                             {mode === 'signup' && 'Create your account'}
                             {mode === 'forgot' && 'Reset your password'}
-                            {mode === 'mfa' && 'Two-factor authentication'}
                         </h1>
                         <p className="text-gray-500">
                             {mode === 'login' && 'Enter your credentials to access your account'}
                             {mode === 'signup' && 'Start your 14-day free trial'}
                             {mode === 'forgot' && "We'll send you a reset link"}
-                            {mode === 'mfa' && 'Enter the code from your authenticator app'}
                         </p>
                     </div>
 
@@ -176,38 +197,6 @@ const LandingPage: React.FC = () => {
                             <CheckCircle size={18} className="text-green-600 shrink-0" />
                             <p className="text-sm text-green-600">{success}</p>
                         </div>
-                    )}
-
-                    {/* MFA Form */}
-                    {mode === 'mfa' && (
-                        <form onSubmit={handleMFAVerify} className="space-y-5">
-                            <div className="flex justify-center mb-6">
-                                <div className="h-16 w-16 rounded-2xl bg-gray-100 flex items-center justify-center">
-                                    <Smartphone size={32} className="text-gray-600" />
-                                </div>
-                            </div>
-                            <div>
-                                <label className="block text-sm font-medium text-gray-700 mb-2">
-                                    Verification Code
-                                </label>
-                                <input
-                                    type="text"
-                                    value={mfaCode}
-                                    onChange={(e) => setMfaCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
-                                    placeholder="000000"
-                                    className="w-full px-4 py-3 border border-gray-200 rounded-lg text-center text-2xl font-mono tracking-[0.5em] focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                                    maxLength={6}
-                                    autoFocus
-                                />
-                            </div>
-                            <button
-                                type="submit"
-                                disabled={loading || mfaCode.length !== 6}
-                                className="w-full py-3 bg-[#121212] text-white font-medium rounded-lg hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed transition-all flex items-center justify-center gap-2"
-                            >
-                                {loading ? <Loader2 size={18} className="animate-spin" /> : 'Verify'}
-                            </button>
-                        </form>
                     )}
 
                     {/* Login Form */}
@@ -317,9 +306,9 @@ const LandingPage: React.FC = () => {
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="Min. 8 characters"
+                                        placeholder="Min. 12 characters with uppercase, lowercase, numbers, and special characters"
                                         className="w-full pl-11 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                                        minLength={8}
+                                        minLength={12}
                                         required
                                     />
                                     <button

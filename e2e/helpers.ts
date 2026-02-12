@@ -1,22 +1,45 @@
 /**
  * Shared E2E test helpers for Procura.
  *
- * Environment variables:
+ * REQUIRED Environment variables:
  *   E2E_USER_EMAIL    — test user email
  *   E2E_USER_PASSWORD — test user password
  *   E2E_ADMIN_EMAIL   — test admin email
  *   E2E_ADMIN_PASSWORD — test admin password
+ *
+ * Security: No default credentials are provided. Tests will fail if environment
+ * variables are not properly configured. This prevents accidental credential exposure.
  */
 import { Page, expect } from '@playwright/test';
 
+// Validate that all required E2E credentials are configured
+function validateE2ECredentials() {
+  const missing: string[] = [];
+
+  if (!process.env.E2E_USER_EMAIL) missing.push('E2E_USER_EMAIL');
+  if (!process.env.E2E_USER_PASSWORD) missing.push('E2E_USER_PASSWORD');
+  if (!process.env.E2E_ADMIN_EMAIL) missing.push('E2E_ADMIN_EMAIL');
+  if (!process.env.E2E_ADMIN_PASSWORD) missing.push('E2E_ADMIN_PASSWORD');
+
+  if (missing.length > 0) {
+    throw new Error(
+      `E2E credentials not configured. Missing environment variables: ${missing.join(', ')}\n` +
+      'Set these in your .env file or CI environment before running tests.'
+    );
+  }
+}
+
+// Validate on module load
+validateE2ECredentials();
+
 export const TEST_USER = {
-  email: process.env.E2E_USER_EMAIL || 'e2e-user@procura-test.local',
-  password: process.env.E2E_USER_PASSWORD || 'TestPassword123!',
+  email: process.env.E2E_USER_EMAIL!,
+  password: process.env.E2E_USER_PASSWORD!,
 };
 
 export const TEST_ADMIN = {
-  email: process.env.E2E_ADMIN_EMAIL || 'e2e-admin@procura-test.local',
-  password: process.env.E2E_ADMIN_PASSWORD || 'AdminPassword123!',
+  email: process.env.E2E_ADMIN_EMAIL!,
+  password: process.env.E2E_ADMIN_PASSWORD!,
 };
 
 /**

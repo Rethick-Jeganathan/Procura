@@ -620,6 +620,30 @@ async def export_audit_logs(
 # User Management
 # ============================================
 
+@router.get("/users/me")
+async def get_current_user_profile(
+    user: dict = Depends(get_current_user)
+):
+    """
+    Get the current authenticated user's profile with database-verified role.
+
+    This endpoint provides secure role information from the database, not from
+    user-controlled metadata. Use this for frontend role-based access control.
+    """
+    return {
+        "success": True,
+        "data": {
+            "id": user.get("id"),
+            "email": user.get("email"),
+            "full_name": user.get("full_name"),
+            "role": user.get("role"),
+            "avatar_url": user.get("avatar_url"),
+            "last_active": user.get("last_active"),
+            "created_at": user.get("created_at"),
+        }
+    }
+
+
 @router.get("/users")
 async def list_users(
     role: Optional[str] = None,

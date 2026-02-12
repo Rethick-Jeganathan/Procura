@@ -28,6 +28,26 @@ const ResetPassword: React.FC = () => {
     const [resendEmail, setResendEmail] = useState('');
     const [resendLoading, setResendLoading] = useState(false);
 
+    // Password complexity validation
+    const validatePassword = (password: string): string | null => {
+        if (password.length < 12) {
+            return 'Password must be at least 12 characters';
+        }
+        if (!/[a-z]/.test(password)) {
+            return 'Password must contain lowercase letters';
+        }
+        if (!/[A-Z]/.test(password)) {
+            return 'Password must contain uppercase letters';
+        }
+        if (!/[0-9]/.test(password)) {
+            return 'Password must contain numbers';
+        }
+        if (!/[!@#$%^&*(),.?":{}|<>]/.test(password)) {
+            return 'Password must contain special characters (!@#$%^&*(),.?":{}|<>)';
+        }
+        return null;
+    };
+
     useEffect(() => {
         let active = true;
 
@@ -36,18 +56,44 @@ const ResetPassword: React.FC = () => {
             setError('');
 
             try {
-                // Check both standard query params and hash params for the code
+                // SECURITY: Extract tokens from URL IMMEDIATELY before any processing
+                // This prevents tokens from remaining in browser history if errors occur
                 const searchParams = new URLSearchParams(window.location.search);
-                const hashQuery = window.location.hash.split('?')[1] || '';
+                const hashQuery = window.location.hash.includes('?') ? window.location.hash.split('?')[1] : '';
                 const hashParams = new URLSearchParams(hashQuery);
-                const code = searchParams.get('code') || hashParams.get('code');
+                const getParam = (key: string) => searchParams.get(key) || hashParams.get(key);
+                const code = getParam('code');
+                const accessToken = getParam('access_token');
+                const refreshToken = getParam('refresh_token');
+
+                // SECURITY: Clear tokens from URL IMMEDIATELY after extraction
+                // Do this BEFORE any async operations that might fail
+                if (window.location.search || window.location.hash.includes('?')) {
+                    const url = new URL(window.location.href);
+                    url.search = '';
+                    if (url.hash.includes('?')) {
+                        url.hash = url.hash.split('?')[0];
+                    }
+                    window.history.replaceState({}, document.title, url.toString());
+                }
 
                 const { data: initial } = await supabase.auth.getSession();
-                if (!initial.session && code) {
-                    const { error } = await supabase.auth.exchangeCodeForSession(code);
-                    if (error && active) {
-                        console.error('Exchange error:', error);
-                        setError('Reset link is invalid or expired. Request a new one.');
+                if (!initial.session) {
+                    if (code) {
+                        const { error } = await supabase.auth.exchangeCodeForSession(code);
+                        if (error && active) {
+                            console.error('Exchange error:', error);
+                            setError('Reset link is invalid or expired. Request a new one.');
+                        }
+                    } else if (accessToken && refreshToken) {
+                        const { error } = await supabase.auth.setSession({
+                            access_token: accessToken,
+                            refresh_token: refreshToken,
+                        });
+                        if (error && active) {
+                            console.error('Session set error:', error);
+                            setError('Reset link is invalid or expired. Request a new one.');
+                        }
                     }
                 }
 
@@ -97,8 +143,10 @@ const ResetPassword: React.FC = () => {
             return;
         }
 
-        if (password.length < 8) {
-            setError('Password must be at least 8 characters.');
+        // Validate password complexity
+        const passwordError = validatePassword(password);
+        if (passwordError) {
+            setError(passwordError);
             return;
         }
 
@@ -208,9 +256,9 @@ const ResetPassword: React.FC = () => {
                                         type={showPassword ? 'text' : 'password'}
                                         value={password}
                                         onChange={(e) => setPassword(e.target.value)}
-                                        placeholder="Min. 8 characters"
+                                        placeholder="Min. 12 characters with uppercase, lowercase, numbers, and special characters"
                                         className="w-full pl-11 pr-12 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                                        minLength={8}
+                                        minLength={12}
                                         required
                                     />
                                     <button
@@ -232,7 +280,7 @@ const ResetPassword: React.FC = () => {
                                         onChange={(e) => setConfirmPassword(e.target.value)}
                                         placeholder="Repeat password"
                                         className="w-full pl-11 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-gray-900 focus:border-transparent transition-all"
-                                        minLength={8}
+                                        minLength={12}
                                         required
                                     />
                                 </div>

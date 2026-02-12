@@ -10,9 +10,6 @@ if (!supabaseUrl || !supabaseAnonKey) {
     console.error('FATAL: VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY must be set in environment.');
 }
 
-// TEMPORARY DEV BYPASS - Set to true to skip Supabase auth
-const DEV_BYPASS_AUTH = false;
-
 export const supabaseConfigured = Boolean(supabaseUrl && supabaseAnonKey);
 
 export const supabase = createClient(supabaseUrl || 'https://placeholder.supabase.co', supabaseAnonKey || 'placeholder', {
@@ -21,6 +18,8 @@ export const supabase = createClient(supabaseUrl || 'https://placeholder.supabas
         persistSession: true,
         detectSessionInUrl: true,
         flowType: 'pkce',
+        // Security Note: localStorage is used for session storage per Supabase SDK design.
+        // Ensure strict CSP headers to mitigate XSS risks.
         storage: localStorage,
         storageKey: 'procura-auth-token',
     },
@@ -40,14 +39,6 @@ interface AuthContextType {
     signUp: (email: string, password: string, fullName: string) => Promise<{ error: AuthError | null }>;
     signOut: () => Promise<void>;
     resetPassword: (email: string) => Promise<{ error: AuthError | null }>;
-    // MFA
-    enrollMFA: () => Promise<{ qrCode: string; secret: string } | null>;
-    verifyMFA: (code: string, factorId: string) => Promise<{ error: AuthError | null }>;
-    challengeMFA: (factorId: string) => Promise<{ challengeId: string } | null>;
-    getMFAFactors: () => Promise<any[]>;
-    unenrollMFA: (factorId: string) => Promise<{ error: AuthError | null }>;
-    isMFAEnabled: boolean;
-    needsMFAVerification: boolean;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -68,8 +59,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
     const [user, setUser] = useState<User | null>(null);
     const [session, setSession] = useState<Session | null>(null);
     const [loading, setLoading] = useState(true);
-    const [isMFAEnabled, setIsMFAEnabled] = useState(false);
-    const [needsMFAVerification, setNeedsMFAVerification] = useState(false);
 
     // Fail-fast if Supabase is not configured
     if (!supabaseConfigured) {
@@ -90,24 +79,21 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 console.warn('Auth initialization timed out after 10s. Continuing without session.');
                 setLoading(false);
             }
-        }, 10000); // Increased to 10 seconds
+        }, 10000);
 
         const initSession = async () => {
             try {
-                const { data: { session }, error } = await supabase.auth.getSession();
-
+                const { data: { session } } = await supabase.auth.getSession();
                 if (cancelled) return;
                 setSession(session);
                 setUser(session?.user ?? null);
-
                 if (session?.access_token) {
                     api.setToken(session.access_token);
                 } else {
                     api.clearToken();
                 }
-
-                await checkMFAStatus(session?.user ?? null);
             } catch {
+                // Session initialization failed - user will need to log in
             } finally {
                 if (!cancelled) {
                     clearTimeout(safetyTimeout);
@@ -119,29 +105,19 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         initSession();
 
         // Listen for auth changes
+        // CRITICAL: This callback must be synchronous (no await) because the
+        // Supabase client awaits all onAuthStateChange callbacks internally.
+        // Any hanging async call here blocks signInWithPassword from resolving.
         const { data: { subscription } } = supabase.auth.onAuthStateChange(
-            async (event, session) => {
-                try {
-                    setSession(session);
-                    setUser(session?.user ?? null);
-                    if (session?.access_token) {
-                        api.setToken(session.access_token);
-                    } else {
-                        api.clearToken();
-                    }
-
-                    if (event === 'SIGNED_IN') {
-                        await checkMFAStatus(session?.user ?? null);
-                    }
-
-                    if (event === 'SIGNED_OUT') {
-                        setIsMFAEnabled(false);
-                        setNeedsMFAVerification(false);
-                    }
-                } catch {
-                } finally {
-                    setLoading(false);
+            (event, session) => {
+                setSession(session);
+                setUser(session?.user ?? null);
+                if (session?.access_token) {
+                    api.setToken(session.access_token);
+                } else {
+                    api.clearToken();
                 }
+                setLoading(false);
             }
         );
 
@@ -152,56 +128,8 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         };
     }, []);
 
-    const checkMFAStatus = async (user: User | null) => {
-        if (!user) {
-            setIsMFAEnabled(false);
-            return;
-        }
-
-        // DEV BYPASS: Skip MFA check
-        if (DEV_BYPASS_AUTH) {
-            setIsMFAEnabled(false);
-            return;
-        }
-
-        try {
-            const { data: factors } = await supabase.auth.mfa.listFactors();
-            const hasVerifiedFactor = factors?.totp?.some(f => f.status === 'verified') ?? false;
-            setIsMFAEnabled(hasVerifiedFactor);
-        } catch {
-            setIsMFAEnabled(false);
-        }
-    };
-
     const signIn = async (email: string, password: string) => {
         try {
-            setNeedsMFAVerification(false);
-            // TEMPORARY BYPASS for development
-            if (DEV_BYPASS_AUTH) {
-                console.log('DEV BYPASS: Skipping Supabase auth');
-                const mockUser: User = {
-                    id: '83b8efee-0446-4190-83c7-1603686532ac',
-                    email: email,
-                    app_metadata: {},
-                    user_metadata: { full_name: 'Dev User' },
-                    aud: 'authenticated',
-                    created_at: new Date().toISOString(),
-                } as User;
-
-                const mockSession: Session = {
-                    access_token: 'dev-bypass-token',
-                    token_type: 'bearer',
-                    expires_in: 3600,
-                    refresh_token: 'dev-refresh-token',
-                    user: mockUser,
-                } as Session;
-
-                setSession(mockSession);
-                setUser(mockUser);
-                api.setToken('dev-bypass-token');
-                return { error: null };
-            }
-
             console.log('🔐 Attempting sign in...');
             const { data, error } = await supabase.auth.signInWithPassword({
                 email,
@@ -218,16 +146,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 setSession(data.session);
                 setUser(data.user);
                 api.setToken(data.session.access_token);
-
-                // MFA check - wrapped in try-catch so abort errors don't break login
-                try {
-                    const { data: factors } = await supabase.auth.mfa.listFactors();
-                    if (factors?.totp?.some(f => f.status === 'verified')) {
-                        setNeedsMFAVerification(true);
-                    }
-                } catch (mfaErr) {
-                    console.warn('MFA check skipped (non-critical):', mfaErr);
-                }
             }
 
             return { error };
@@ -245,6 +163,7 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
                 data: {
                     full_name: fullName,
                 },
+                emailRedirectTo: `${window.location.origin}/#/dashboard`,
             },
         });
         return { error };
@@ -255,86 +174,12 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         api.clearToken();
         setUser(null);
         setSession(null);
-        setIsMFAEnabled(false);
-        setNeedsMFAVerification(false);
     };
 
     const resetPassword = async (email: string) => {
         const { error } = await supabase.auth.resetPasswordForEmail(email, {
             redirectTo: `${window.location.origin}/#/reset-password`,
         });
-        return { error };
-    };
-
-    // MFA Functions
-    const enrollMFA = async () => {
-        try {
-            const { data, error } = await supabase.auth.mfa.enroll({
-                factorType: 'totp',
-                friendlyName: 'Procura Authenticator',
-            });
-
-            if (error || !data) return null;
-
-            return {
-                qrCode: data.totp.qr_code,
-                secret: data.totp.secret,
-            };
-        } catch {
-            return null;
-        }
-    };
-
-    const verifyMFA = async (code: string, factorId: string) => {
-        const { data: challenge } = await supabase.auth.mfa.challenge({
-            factorId,
-        });
-
-        if (!challenge) {
-            return { error: { message: 'Failed to create challenge' } as AuthError };
-        }
-
-        const { error } = await supabase.auth.mfa.verify({
-            factorId,
-            challengeId: challenge.id,
-            code,
-        });
-
-        if (!error) {
-            setNeedsMFAVerification(false);
-            setIsMFAEnabled(true);
-        }
-
-        return { error };
-    };
-
-    const challengeMFA = async (factorId: string) => {
-        const { data, error } = await supabase.auth.mfa.challenge({
-            factorId,
-        });
-
-        if (error || !data) return null;
-        return { challengeId: data.id };
-    };
-
-    const getMFAFactors = async () => {
-        // DEV BYPASS: Return empty array
-        if (DEV_BYPASS_AUTH) {
-            return [];
-        }
-        const { data } = await supabase.auth.mfa.listFactors();
-        return data?.totp ?? [];
-    };
-
-    const unenrollMFA = async (factorId: string) => {
-        const { error } = await supabase.auth.mfa.unenroll({
-            factorId,
-        });
-
-        if (!error) {
-            setIsMFAEnabled(false);
-        }
-
         return { error };
     };
 
@@ -346,13 +191,6 @@ export const AuthProvider: React.FC<AuthProviderProps> = ({ children }) => {
         signUp,
         signOut,
         resetPassword,
-        enrollMFA,
-        verifyMFA,
-        challengeMFA,
-        getMFAFactors,
-        unenrollMFA,
-        isMFAEnabled,
-        needsMFAVerification,
     };
 
     return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
